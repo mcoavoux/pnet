@@ -63,7 +63,7 @@ def construct_examples(raw_data):
         if d['title'] is None:
             d['title'] = ""
         
-        review = d['title'] + " " + " <STOP> <START> ".join(d['text'])
+        review = d['title'] + " " + " STOP START ".join(d['text'])
 
         if 'gender' in o and 'birth_year' in o:
             if o['gender'] is None or o['birth_year'] is None:
@@ -82,6 +82,13 @@ def get_dataset():
     raw_data = get_raw_data("../datasets/src/france.auto-adjusted_gender.NUTS-regions.jsonl.tmp_filtered")
     examples = construct_examples(raw_data)
     
+    #if add_demographics:
+        #for ex in examples:
+            #s = ex.get_sentence()
+            #aux = ex.get_aux_labels()
+            #s.append("<G={}>".format(aux[0]))
+            #s.append("<A={}>".format(aux[1]))
+
     random.shuffle(examples)
     seg_size = len(examples) // 10
     test, dev, train = examples[:seg_size], examples[seg_size:seg_size*2], examples[seg_size*2:]

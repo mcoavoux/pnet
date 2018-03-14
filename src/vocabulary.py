@@ -5,8 +5,8 @@ import numpy as np
 ALPHA = 0.8375  # stochastic replacement constant
 UNK = "<UNK>"
 UNDEF = "<UNDEF>"
-START = "<START>"
-STOP = "<STOP>"
+START = "START"
+STOP = "STOP"
 
 UNK_I, UNDEF_I, START_I, STOP_I = list(range(4))
 
