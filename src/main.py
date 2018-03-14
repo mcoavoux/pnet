@@ -313,13 +313,13 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
-    parser.add_argument("--iterations", "-i", type=int, default=4, help="Number of training iterations")
-    parser.add_argument("--iterations-adversary", "-I", type=int, default=6, help="Number of training iterations")
+    parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
+    parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--decay-constant", type=float, default=1e-6)
     parser.add_argument("--learning-rate", type=float, default=0.01)
     parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
 
-    parser.add_argument("--dynet-seed", type=int, default=3 , help="random seed for dynet (needs to be first argument!)")
+    parser.add_argument("--dynet-seed", type=int, default=4 , help="random seed for dynet (needs to be first argument!)")
     parser.add_argument("--dynet-weight-decay", type=float, default=1e-6, help="Weight decay for dynet")
 
 
