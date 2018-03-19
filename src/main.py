@@ -2,6 +2,7 @@ from collections import defaultdict
 
 import imdb_data_reader
 import trustpilot_data_reader
+import ag_data_reader
 
 from classifier import *
 from example import *
@@ -138,7 +139,7 @@ def train_model(model, output_folder, trainer, bilstm, sentiment_classifier, epo
         
         main_t, aux_t = evaluate(bilstm, sample_train, sentiment_classifier, aux_classifiers, use_demographics =use_demographics)
         main_d, aux_d = evaluate(bilstm, dev, sentiment_classifier, aux_classifiers, use_demographics =use_demographics)
-        
+
         losst, acct = main_t
         lossd, accd = main_d
         losst, acct, lossd, accd = list(map(lambda x : round(x, 4), [losst, acct, lossd, accd]))
@@ -223,7 +224,9 @@ def train_adversary(model, output_folder, trainer, bilstm, sentiment_classifier,
 def main(args):
     import dynet as dy
     
-    train, dev, test = trustpilot_data_reader.get_dataset()
+    #train, dev, test = trustpilot_data_reader.get_dataset()
+    train, dev, test = ag_data_reader.get_dataset()
+    
     
     
     labels_main_task = set([ex.get_label() for ex in train])
@@ -248,11 +251,12 @@ def main(args):
     
     bilstm = HierarchicalBiLSTM(args, vocabulary, model)
     
-    sentiment_classifier = MLP(args.dim_wrnn * 2, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    input_size = bilstm.size()
+    sentiment_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
     
-    gender_classifier = MLP(args.dim_wrnn * 2, len(labels_aux_task[0]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
-    age_classifier = MLP(args.dim_wrnn * 2, len(labels_aux_task[1]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    gender_classifier = MLP(input_size, len(labels_aux_task[0]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    age_classifier = MLP(input_size, len(labels_aux_task[1]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
     trainer = dy.SimpleSGDTrainer(model)
     
@@ -275,7 +279,8 @@ def main(args):
     aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
     print("\t Test results : l={} acc={} aux={}".format(losst, acct, aux_train))
 
-    input_size = args.dim_wrnn * 2 + args.hidden_layers * args.dim_hidden
+    input_size += args.hidden_layers * args.dim_hidden
+    #input_size = args.dim_wrnn * 2 + args.hidden_layers * args.dim_hidden
     output_sizes = len(labels_aux_task[0]), len(labels_aux_task[1])
     adversary_classifiers = [MLP(input_size, output_sizes[i], args.hidden_layers, args.dim_hidden, dy.rectify, model) for i in [0, 1]]
     
@@ -289,12 +294,14 @@ def main(args):
     
     # Sanity check: see that the main model has same results
 
+    """
     print("Sanity check: remove lines")
     main_t, aux_t = evaluate(bilstm, test, sentiment_classifier, l, adversary=False, use_demographics = args.use_demographics)
     losst, acct = main_t
     losst, acct  = list(map(lambda x : round(x, 4), [losst, acct]))
     aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
     print("\t Test results : l={} acc={} aux={}".format(losst, acct, aux_train))
+    """
 
 
 
@@ -318,6 +325,7 @@ if __name__ == "__main__":
     parser.add_argument("--decay-constant", type=float, default=1e-6)
     parser.add_argument("--learning-rate", type=float, default=0.01)
     parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
+    parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
 
     parser.add_argument("--dynet-seed", type=int, default=4 , help="random seed for dynet (needs to be first argument!)")
     parser.add_argument("--dynet-weight-decay", type=float, default=1e-6, help="Weight decay for dynet")
