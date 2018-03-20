@@ -46,6 +46,13 @@ def extract_vocabulary(dataset, add_symbols=None):
             freqs[s] += 1000
     return Vocabulary(freqs)
 
+def get_aux_labels(examples):
+    labels = set()
+    for ex in examples:
+        for l in ex.get_aux_labels():
+            labels.add(l)
+    return labels
+
 def train_one(trainer, bilstm, example, classifiers, aux=False, use_demographics = False):
     prefix = get_demographics_prefix(example) if use_demographics else []
     
@@ -58,7 +65,7 @@ def train_one(trainer, bilstm, example, classifiers, aux=False, use_demographics
         loss = dy.esum([classifiers[i].get_loss(encoding, t) for i, t in enumerate(targets)])
     
     loss.backward()
-    trainer.update()
+    self.trainer.update()
 
 def evaluate_one(bilstm, example, main_classifier, aux_classifiers, adversary=False, use_demographics = False):
     prefix = get_demographics_prefix(example) if use_demographics else []
@@ -219,19 +226,114 @@ def train_adversary(model, output_folder, trainer, bilstm, sentiment_classifier,
     
     model.populate("{}/model_aux{}".format(output_folder, ibest))
 
+class PrModel:
+    
+    def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier):
+        
+        self.args = args
+        
+        self.model = model
+        self.trainer = trainer
+        
+        self.output_folder = args.output
+        self.bilstm = bilstm
+        
+        self.main_classifier = main_classifier
+        
+        self.aux_classifiers = aux_classifier
+        self.adversary_classifier = adversary_classifier
+        
+        self.adversary = False
 
+    def get_input(self, example, training):
+        prefix = get_demographics_prefix(example) if self.args.use_demographics else []
+        encoding, transducting = self.bilstm.build_representations(example.get_sentence(), training=training, prefix = prefix)
+        
+        if self.adversary:
+            hidden_layers = self.main_classifier.compute_output_layer(encoding)[:-1]
+            input_adversary = dy.concatenate(hidden_layers)
+            input_adversary = dy.nobackprop(input_adversary)
+            return input_adversary
+        return encoding
+
+    def train_one(self, example, target, classifier):
+        input_vec = self.get_input(example, True)
+        loss = classifier.get_loss(input_vec, target)
+        loss.backward()
+        self.trainer.update()
+
+    def predict(self, example, target, classifier):
+        input_vec = self.get_input(example, False)
+        loss, prediction = classifier.get_loss_and_prediction(input_vec, target)
+        return loss, prediction
+
+    def evaluate(self, dataset, targets, classifier):
+        loss = 0
+        acc = 0
+        tot = len(dataset)
+        assert(len(targets) == len(dataset))
+        self.bilstm.disable_dropout()
+        predictions = []
+        for i, ex in enumerate(dataset):
+            l, p = self.predict(ex, targets[i], classifier)
+            predictions.append(p)
+            if p == targets[i]:
+                acc += 1
+            loss += l
+        return loss / tot, acc / tot * 100
+
+    def train_main(self, train, dev):
+        lr = args.learning_rate
+        dc = args.decay_constant
+        
+        self.adversary = False
+
+        random.shuffle(train)
+        sample_train = train[:len(dev)]
+        self.trainer.learning_rate = lr
+        n_updates = 0
+
+        best = 0
+        ibest=0
+    
+        for epoch in range(args.iterations):
+            random.shuffle(train)
+            self.bilstm.set_dropout(0.2)
+            for i, example in enumerate(train):
+                sys.stderr.write("\r{}%".format(i / len(train) * 100))
+                
+                self.train_one(example, example.get_label(), self.main_classifier)
+                self.trainer.learning_rate = lr / (1 + n_updates * dc)
+                n_updates += 1
+            
+            sys.stderr.write("\r")
+            
+            targets_t = [ex.get_label() for ex in sample_train]
+            targets_d = [ex.get_label() for ex in dev]
+            
+            loss_t, acc_t = self.evaluate(sample_train, targets_t, self.main_classifier)
+            loss_d, acc_d = self.evaluate(dev, targets_d, self.main_classifier)
+            
+            if acc_d > best:
+                best = acc_d
+                ibest = epoch
+                self.model.save("{}/model{}".format(self.output_folder, ibest))
+            
+            print("Epoch {} train: l={} acc={} dev: l={} acc={}".format(epoch, loss_t, acc_t, loss_d, acc_d), flush=True)
+        
+        model.populate("{}/model{}".format(self.output_folder, ibest))
 
 def main(args):
     import dynet as dy
     
-    #train, dev, test = trustpilot_data_reader.get_dataset()
-    train, dev, test = ag_data_reader.get_dataset()
-    
-    
+    if args.dataset == "ag":
+        train, dev, test = ag_data_reader.get_dataset()
+    else:
+        train, dev, test = trustpilot_data_reader.get_dataset()
     
     labels_main_task = set([ex.get_label() for ex in train])
-    labels_aux_task = list(zip(*[ex.get_aux_labels() for ex in train]))
-    labels_aux_task = [set(l) for l in labels_aux_task]
+    
+    labels_adve_task = get_aux_labels(train)
     
     print("Train data distribution")
     print_data_distributions(train)
@@ -242,37 +344,41 @@ def main(args):
     print("Test data distribution")
     print_data_distributions(test)
 
+
+
     model = dy.Model()
     
     if args.use_demographics:
         symbols = ["<g={}>".format(i) for i in [0, 1]] + ["<a={}>".format(i) for i in [0, 1]]
-    
     vocabulary = extract_vocabulary(train)
-    
     bilstm = HierarchicalBiLSTM(args, vocabulary, model)
-    
     input_size = bilstm.size()
-    sentiment_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
-    
-    
-    gender_classifier = MLP(input_size, len(labels_aux_task[0]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
-    age_classifier = MLP(input_size, len(labels_aux_task[1]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    main_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
     trainer = dy.SimpleSGDTrainer(model)
     
     if args.subset:
-        train_set = train_set[:args.subset]
-        dev_set = dev_set[:args.subset]
+        train = train[:args.subset]
+        dev = dev[:args.subset]
 
-    if args.aux:
-        l = [gender_classifier, age_classifier]
-    else:
-        l = None
+    #if args.aux:
+        #gender_classifier = MLP(input_size, len(labels_aux_task[0]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
+        #age_classifier = MLP(input_size, len(labels_aux_task[1]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
+        #l = [gender_classifier, age_classifier]
+    #else:
+        #l = None
     
+    #### add adversary classifier
+    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, None)
     
-    train_model(model, args.output, trainer, bilstm, sentiment_classifier, args.iterations, train, dev, l, args.learning_rate, args.decay_constant, args.use_demographics)
+    mod.train_main(train, dev)
     
+    targets_test = [ex.get_label() for ex in test_set]
+    loss_test, acc_test = mod.evaluate(test, targets_test, mod.main_classifier)
     
+    print("\t Test results : l={} acc={}".format(loss_test, acc_test))
+    
+    """
     main_t, aux_t = evaluate(bilstm, test, sentiment_classifier, l, adversary=False, use_demographics = args.use_demographics)
     losst, acct = main_t
     losst, acct  = list(map(lambda x : round(x, 4), [losst, acct]))
@@ -282,7 +388,11 @@ def main(args):
     input_size += args.hidden_layers * args.dim_hidden
     #input_size = args.dim_wrnn * 2 + args.hidden_layers * args.dim_hidden
     output_sizes = len(labels_aux_task[0]), len(labels_aux_task[1])
-    adversary_classifiers = [MLP(input_size, output_sizes[i], args.hidden_layers, args.dim_hidden, dy.rectify, model) for i in [0, 1]]
+    
+    if args.adversary_type == "softmax":
+        adversary_classifiers = [MLP(input_size, output_sizes[i], args.hidden_layers, args.dim_hidden, dy.rectify, model) for i in [0, 1]]
+    else:
+        adversary_classifiers = [MLP_sigmoid(input_size, output_sizes[i], args.hidden_layers, args.dim_hidden, dy.rectify, model)]
     
     train_adversary(model, args.output, trainer, bilstm, sentiment_classifier, adversary_classifiers, args.iterations_adversary, train, dev, args.learning_rate, args.decay_constant, args.use_demographics)
 
@@ -293,6 +403,7 @@ def main(args):
     print("\t Adversary Test results : l={} acc={} aux={}".format(losst, acct, aux_train))
     
     # Sanity check: see that the main model has same results
+    """
 
     """
     print("Sanity check: remove lines")
@@ -320,12 +431,17 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
+    parser.add_argument("dataset", choices=["ag", "tp"], help="Dataset")
+    
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
+    
     parser.add_argument("--decay-constant", type=float, default=1e-6)
     parser.add_argument("--learning-rate", type=float, default=0.01)
     parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
     parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
+    
+    #parser.add_argument("--adversary-type", choices=["logistic", "softmax"])
 
     parser.add_argument("--dynet-seed", type=int, default=4 , help="random seed for dynet (needs to be first argument!)")
     parser.add_argument("--dynet-weight-decay", type=float, default=1e-6, help="Weight decay for dynet")

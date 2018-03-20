@@ -5,6 +5,8 @@ import sys
 import random
 random.seed(10)
 
+from collections import defaultdict
+
 import ner
 from example import Example
 
@@ -14,6 +16,15 @@ from nltk import Tree
 
 def preprocess(line):
     return unescape(line.replace("\\", " "))
+
+def count_NE(dataset):
+    counts = defaultdict(int)
+    for ex in dataset:
+        aux = ex.get_aux_labels()
+        if aux is not None:
+            for e in aux:
+                counts[e] += 1
+    return counts
 
 def get_dataset():
     
@@ -50,11 +61,12 @@ def get_dataset():
                 examples.append(ex)
             d = []
         i += 1
-    
-    sentences = [ex.sentence for ex in examples]
-    result = ner.NER_stanford(sentences, "ag_corpus")
-    
-    print(len(sentences), len(result))
+
+    ner.tags_NE(examples, "ag_corpus")
+
+    #sentences = [ex.sentence for ex in examples]
+    #for s in sentences:
+        #result = ner.NER(s)
     
     random.shuffle(examples)
     

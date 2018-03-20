@@ -19,6 +19,18 @@ class Example:
     
     def get_aux_labels(self):
         return self.metadata
+    
+    
+    
+    
+    def get_training_example(self):
+        return self.p_sentence, self.label
+    
+    def get_aux_training(self):
+        return self.p_sentence, self.metadata
+
+
+
 
 
 

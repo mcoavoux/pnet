@@ -4,6 +4,8 @@ import os
 
 from nltk import word_tokenize, pos_tag, ne_chunk
 from nltk.tag import StanfordNERTagger
+from collections import defaultdict
+
 #from nltk.tag import corenlp.CoreNLPNERTagger
 #from nltk.tag.stanford import CoreNLPNERTagger
 
@@ -15,9 +17,11 @@ from nltk.tag import StanfordNERTagger
 #st = CoreNLPNERTagger(url='http://localhost:9000')
 #st = CoreNLPNERTagger()
 
-def add_NE(example):
+
+
+def get_NE(example):
     sentence = example.get_sentence()
-    
+
     ner_sent = NER(sentence)
     
     res = []
@@ -27,52 +31,84 @@ def add_NE(example):
             children = "_".join([a[0] for a in c])
             res.append((label, children))
     
-    if len(res) > 0:
-        example.metadata = res
-        print(res)
-
+    return res
 
 def NER(sentence):
     if type(sentence) == str:
         sentence = word_tokenize(sentence)
     
     NE = ne_chunk(pos_tag(sentence))
-    #NE = st.tag(sentence)
     
-    print(NE)
     return NE
 
-def extract_most_frequent(sentences):
-    for sentence in sentences:
-        split_sentence = sentence.split()
-        toks = [t.split("/") for t in split_sentence]
-        
+def save_NER(dataset, final_file):
+    out = open(final_file, "w")
+    res = []
+    for ex in dataset:
+        ne = get_NE(ex)
+        res.append(ne)
+        line = " ".join(["/".join(t) for t in ne])
+        out.write("{}\n".format(line))
+    return res
+
+def load_NER(dataset, final_file):
+    ins = open(final_file, "r")
+    res = []
+    for line in ins:
+        line  = line.strip()
+        if not line:
+            res.append([])
+        else:
+            sline = [tuple(e.split("/")) for e in line.split(" ")]
+            res.append(sline)
+    return res
+
+def tags_NE(dataset, idcorpus, k=100):
+    final_file = "../tools/ner_{}".format(idcorpus)
+    if not os.path.isfile(final_file):
+        nes = save_NER(dataset, final_file)
+    else:
+        nes = load_NER(dataset, final_file)
     
+    counts = defaultdict(int)
+    for e in nes:
+        for ne in e:
+            counts[ne] += 1
+    
+    k_most_freq = set(sorted(counts, key = lambda x : counts[x], reverse=True)[:k])
+    mapping = {e : i for i, e in enumerate(k_most_freq)}
+    
+    for e in k_most_freq:
+        print(e, counts[e])
+    
+    for example, ne in zip(dataset, nes):
+        example.metadata = {mapping[e] for e in ne if e in k_most_freq}
+
 
 def NER_stanford(sentence_list, idcorpus):
-    
-    if not os.path.isfile("../tools/tmp_filename_{}.ner".format(idcorpus)):
+    final_file = "../tools/tmp_filename_all_{}.ner".format(idcorpus)
+    if not os.path.isfile(final_file):
+        all_out = open(final_file, "w")
         os.chdir("../tools/stanford-ner-2018-02-27/")
         
-        
-        last = 0
         for i, s in enumerate(sentence_list):
-            tmpfile = open("../tmp_filename_{}_{}".format(idcorpus, 0), "w")
+            tmpfile = open("../tmp_filename_{}".format(idcorpus), "w")
             tmpfile.write("{}\n".format(s))
+            tmpfile.close()
             
-            if i % 1000 == 0 or i == len(sentence_list):
-                tmpfile.close()
-                os.system("java -mx600m -cp stanford-ner.jar:lib/* edu.stanford.nlp.ie.crf.CRFClassifier -loadClassifier classifiers/english.all.3class.distsim.crf.ser.gz -textFile ../tmp_filename_{f}_{i} >> ../tmp_filename_{f}.ner".format(f=idcorpus, i=last))
-                tmpfile = open("../tmp_filename_{}_{}".format(idcorpus, i), "w")
-                last = i
-        tmpfile.close()
+            outfile = "../tmp_filename_{}.ner".format(idcorpus)
+            os.system("java -mx600m -cp stanford-ner.jar:lib/* edu.stanford.nlp.ie.crf.CRFClassifier -loadClassifier classifiers/english.all.3class.distsim.crf.ser.gz -textFile ../tmp_filename_{} > {}".format(idcorpus, outfile))
+            
+            res = " ".join(open(outfile).read().split("\n"))
+            all_out.write("{}\n".format(res))
+        
+        all_out.close()
         os.chdir("../../src/")
     
-    tmpfile = open("../tools/tmp_filename_{}.ner".format(idcorpus))
+    tmpfile = open(final_file)
     res = []
     for line in tmpfile:
         res.append(line.strip())
-    tmpfile.close()
     return res
 
 if __name__ == "__main__":
