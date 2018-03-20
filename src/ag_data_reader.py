@@ -63,18 +63,12 @@ def get_dataset():
         i += 1
 
     ner.tags_NE(examples, "ag_corpus")
-
-    #sentences = [ex.sentence for ex in examples]
-    #for s in sentences:
-        #result = ner.NER(s)
     
     random.shuffle(examples)
     
     l = len(examples) // 10
-    
     test, dev, train = examples[:l], examples[l:2*l], examples[2*l:]
 
-    
     return train, dev, test
 
 

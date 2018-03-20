@@ -53,6 +53,7 @@ def get_aux_labels(examples):
             labels.add(l)
     return labels
 
+"""
 def train_one(trainer, bilstm, example, classifiers, aux=False, use_demographics = False):
     prefix = get_demographics_prefix(example) if use_demographics else []
     
@@ -225,6 +226,7 @@ def train_adversary(model, output_folder, trainer, bilstm, sentiment_classifier,
         print("Epoch {} train-adv={} dev-adv={}".format(epoch, aux_train, aux_dev))
     
     model.populate("{}/model_aux{}".format(output_folder, ibest))
+"""
 
 class PrModel:
     
@@ -267,7 +269,8 @@ class PrModel:
         loss, prediction = classifier.get_loss_and_prediction(input_vec, target)
         return loss, prediction
 
-    def evaluate(self, dataset, targets, classifier):
+    def evaluate(self, dataset, targets, classifier, adversary):
+        self.adversary = adversary
         loss = 0
         acc = 0
         tot = len(dataset)
@@ -279,14 +282,15 @@ class PrModel:
             predictions.append(p)
             if p == targets[i]:
                 acc += 1
-            loss += l
+            loss += l.value()
         return loss / tot, acc / tot * 100
 
-    def train_main(self, train, dev):
+    def _train(self, train, dev, epochs, classifier, get_label, adversary):
+
         lr = args.learning_rate
         dc = args.decay_constant
         
-        self.adversary = False
+        self.adversary = adversary
 
         random.shuffle(train)
         sample_train = train[:len(dev)]
@@ -296,32 +300,41 @@ class PrModel:
         best = 0
         ibest=0
     
-        for epoch in range(args.iterations):
+        for epoch in range(epochs):
             random.shuffle(train)
             self.bilstm.set_dropout(0.2)
             for i, example in enumerate(train):
                 sys.stderr.write("\r{}%".format(i / len(train) * 100))
                 
-                self.train_one(example, example.get_label(), self.main_classifier)
+                self.train_one(example, get_label(example), classifier)
                 self.trainer.learning_rate = lr / (1 + n_updates * dc)
                 n_updates += 1
             
             sys.stderr.write("\r")
             
-            targets_t = [ex.get_label() for ex in sample_train]
-            targets_d = [ex.get_label() for ex in dev]
+            targets_t = [get_label(ex) for ex in sample_train]
+            targets_d = [get_label(ex) for ex in dev]
             
-            loss_t, acc_t = self.evaluate(sample_train, targets_t, self.main_classifier)
-            loss_d, acc_d = self.evaluate(dev, targets_d, self.main_classifier)
+            loss_t, acc_t = self.evaluate(sample_train, targets_t, classifier, adversary)
+            loss_d, acc_d = self.evaluate(dev, targets_d, classifier, adversary)
             
             if acc_d > best:
                 best = acc_d
                 ibest = epoch
-                self.model.save("{}/model{}".format(self.output_folder, ibest))
+                pref = "ad_" if adversary else ""
+                self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
             
             print("Epoch {} train: l={} acc={} dev: l={} acc={}".format(epoch, loss_t, acc_t, loss_d, acc_d), flush=True)
         
-        model.populate("{}/model{}".format(self.output_folder, ibest))
+        self.model.populate("{}/model{}".format(self.output_folder, ibest))
+
+    def train_main(self, train, dev):
+        get_label = lambda ex: ex.get_label()
+        self._train(train, dev, args.iterations, self.main_classifier, get_label, False)
+
+    def train_adversary(self, train, dev):
+        get_label = lambda ex: ex.get_aux_labels()
+        self._train(train, dev, args.iterations_adversary, self.adversary_classifier, get_label, True)
 
 def main(args):
     import dynet as dy
@@ -361,62 +374,30 @@ def main(args):
         train = train[:args.subset]
         dev = dev[:args.subset]
 
-    #if args.aux:
-        #gender_classifier = MLP(input_size, len(labels_aux_task[0]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
-        #age_classifier = MLP(input_size, len(labels_aux_task[1]), args.hidden_layers, args.dim_hidden, dy.rectify, model)
-        #l = [gender_classifier, age_classifier]
-    #else:
-        #l = None
-    
+    input_size += args.hidden_layers * args.dim_hidden
+    output_size = len(labels_adve_task)
+    if args.adversary_type == "softmax":
+        adversary_classifier = MLP(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    else:
+        adversary_classifier = MLP_sigmoid(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
+
     #### add adversary classifier
-    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, None)
+    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
     
     mod.train_main(train, dev)
-    
-    targets_test = [ex.get_label() for ex in test_set]
-    loss_test, acc_test = mod.evaluate(test, targets_test, mod.main_classifier)
-    
+    targets_test = [ex.get_label() for ex in test]
+    loss_test, acc_test = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
     
-    """
-    main_t, aux_t = evaluate(bilstm, test, sentiment_classifier, l, adversary=False, use_demographics = args.use_demographics)
-    losst, acct = main_t
-    losst, acct  = list(map(lambda x : round(x, 4), [losst, acct]))
-    aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
-    print("\t Test results : l={} acc={} aux={}".format(losst, acct, aux_train))
+    mod.train_adversary(train, dev)
+    targets_test = [ex.get_aux_labels() for ex in test]
+    loss_test, acc_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
+    print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
 
-    input_size += args.hidden_layers * args.dim_hidden
-    #input_size = args.dim_wrnn * 2 + args.hidden_layers * args.dim_hidden
-    output_sizes = len(labels_aux_task[0]), len(labels_aux_task[1])
-    
-    if args.adversary_type == "softmax":
-        adversary_classifiers = [MLP(input_size, output_sizes[i], args.hidden_layers, args.dim_hidden, dy.rectify, model) for i in [0, 1]]
-    else:
-        adversary_classifiers = [MLP_sigmoid(input_size, output_sizes[i], args.hidden_layers, args.dim_hidden, dy.rectify, model)]
-    
-    train_adversary(model, args.output, trainer, bilstm, sentiment_classifier, adversary_classifiers, args.iterations_adversary, train, dev, args.learning_rate, args.decay_constant, args.use_demographics)
-
-    main_t, aux_t = evaluate(bilstm, test, sentiment_classifier, adversary_classifiers, adversary=True, use_demographics = args.use_demographics)
-    losst, acct = main_t
-    losst, acct  = list(map(lambda x : round(x, 4), [losst, acct]))
-    aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
-    print("\t Adversary Test results : l={} acc={} aux={}".format(losst, acct, aux_train))
-    
-    # Sanity check: see that the main model has same results
-    """
-
-    """
-    print("Sanity check: remove lines")
-    main_t, aux_t = evaluate(bilstm, test, sentiment_classifier, l, adversary=False, use_demographics = args.use_demographics)
-    losst, acct = main_t
-    losst, acct  = list(map(lambda x : round(x, 4), [losst, acct]))
-    aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
-    print("\t Test results : l={} acc={} aux={}".format(losst, acct, aux_train))
-    """
-
-
-
-
+    print("Sanity check")
+    targets_test = [ex.get_label() for ex in test]
+    loss_test, acc_test = mod.evaluate(test, targets_test, mod.main_classifier, False)
+    print("\t Test results : l={} acc={}".format(loss_test, acc_test))
 
 
 if __name__ == "__main__":
@@ -441,7 +422,7 @@ if __name__ == "__main__":
     parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
     parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
     
-    #parser.add_argument("--adversary-type", choices=["logistic", "softmax"])
+    parser.add_argument("--adversary-type", choices=["logistic", "softmax"], default="logistic")
 
     parser.add_argument("--dynet-seed", type=int, default=4 , help="random seed for dynet (needs to be first argument!)")
     parser.add_argument("--dynet-weight-decay", type=float, default=1e-6, help="Weight decay for dynet")
@@ -463,6 +444,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     os.makedirs(args.output, exist_ok=True)
+    
+    if args.dataset == "ag":
+        args.adversary_type = "logistic"
+    else:
+        args.adversary_type = "softmax"
     
     if "--dynet-seed" not in sys.argv:
         sys.argv.extend(["--dynet-seed", str(args.dynet_seed)])

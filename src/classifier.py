@@ -52,7 +52,7 @@ class MLP_sigmoid(MLP):
                  res.append(self.activation(W * res[-1] + b))
         return res
 
-    def get_loss(self, input, targets):
+    def get_loss(self, input, targets, epsilon = 1e-10):
         layers = self.compute_output_layer(input)
         
         dim = layers[-1].dim()[0][0]
@@ -60,11 +60,13 @@ class MLP_sigmoid(MLP):
         for t in targets:
             ts[t] = 0
         
-        e = dy.Expression(ts)
+        e = dy.inputTensor(ts)
         me = - e
         last = dy.cmult(layers[-1], me) + e
         
-        return - dy.esum(dy.log(last))
+        #print(last.value())
+        
+        return - dy.sum_elems(dy.log(last + epsilon))
 
     def get_prediction(self, input):
         layers = self.compute_output_layer(input)
@@ -72,21 +74,21 @@ class MLP_sigmoid(MLP):
         res = {i for i in output if i > 0.5}
         return res
     
-    def get_loss_and_prediction(self, input, targets):
+    def get_loss_and_prediction(self, input, targets, epsilon = 1e-10):
         layers = self.compute_output_layer(input)
         dim = layers[-1].dim()[0][0]
         ts = np.ones(dim)
         for t in targets:
             ts[t] = 0
         
-        e = dy.Expression(ts)
+        e = dy.inputTensor(ts)
         me = - e
         last = dy.cmult(layers[-1], me) + e
 
         output = layers[-1].value()
         res = {i for i in output if i > 0.5}
         
-        return - dy.esum(dy.log(last)), res
+        return - dy.sum_elems(dy.log(last + epsilon)), res
 
 
 
