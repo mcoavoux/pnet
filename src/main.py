@@ -228,6 +228,38 @@ def train_adversary(model, output_folder, trainer, bilstm, sentiment_classifier,
     model.populate("{}/model_aux{}".format(output_folder, ibest))
 """
 
+
+def compute_fscore(gold, predictions):
+    
+    tp = 0
+    all_pred = 0
+    all_gold = 0
+    
+    #fp = 0
+    #fn = 0
+    #gc = 0
+    
+    for gs, ps in zip(gold, predictions):
+        ctp = len([i for i in gs if i in ps])
+        tp += ctp
+        
+        all_pred += len(ps)
+        all_gold += len(gs)
+        #cfp = len([i for i in ps if i not in gs])
+        #cfn = len([i for i in gs if i not in ps])
+        #fp += cfp
+        #fn += cfn
+    precision = 0
+    recall = 0
+    f = 0
+    if all_pred != 0:
+        precision = tp / all_pred
+    if all_gold != 0:
+        recall = tp / all_gold
+    if precision != 0 and recall != 0:
+        f = 2 * precision * recall / (precision + recall)
+    return precision, recall, f
+
 class PrModel:
     
     def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier):
@@ -283,7 +315,7 @@ class PrModel:
             if p == targets[i]:
                 acc += 1
             loss += l.value()
-        return loss / tot, acc / tot * 100
+        return loss / tot, acc / tot * 100, predictions
 
     def _train(self, train, dev, epochs, classifier, get_label, adversary):
 
@@ -315,8 +347,15 @@ class PrModel:
             targets_t = [get_label(ex) for ex in sample_train]
             targets_d = [get_label(ex) for ex in dev]
             
-            loss_t, acc_t = self.evaluate(sample_train, targets_t, classifier, adversary)
-            loss_d, acc_d = self.evaluate(dev, targets_d, classifier, adversary)
+            loss_t, acc_t, predictions_t = self.evaluate(sample_train, targets_t, classifier, adversary)
+            loss_d, acc_d, predictions_d = self.evaluate(dev, targets_d, classifier, adversary)
+            
+            Fscore = ""
+            if self.adversary and self.args.dataset == "ag":
+                ftrain = compute_fscore(targets_t, predictions_t)
+                fdev = compute_fscore(targets_d, predictions_d)
+                
+                Fscore = "t = {{}} d = {{}}".format(ftrain, fdev)
             
             if acc_d > best:
                 best = acc_d
@@ -324,7 +363,7 @@ class PrModel:
                 pref = "ad_" if adversary else ""
                 self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
             
-            print("Epoch {} train: l={} acc={} dev: l={} acc={}".format(epoch, loss_t, acc_t, loss_d, acc_d), flush=True)
+            print("Epoch {} train: l={} acc={} dev: l={} acc={} F = {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
         
         self.model.populate("{}/model{}".format(self.output_folder, ibest))
 
@@ -386,17 +425,19 @@ def main(args):
     
     mod.train_main(train, dev)
     targets_test = [ex.get_label() for ex in test]
-    loss_test, acc_test = mod.evaluate(test, targets_test, mod.main_classifier, False)
+    loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
     
     mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
-    loss_test, acc_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
+    loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
+    Fscore = compute_fscore(targets_test, predictions_test)
+    print("\tF = {} ".format(Fscore))
 
     print("Sanity check")
     targets_test = [ex.get_label() for ex in test]
-    loss_test, acc_test = mod.evaluate(test, targets_test, mod.main_classifier, False)
+    loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
 
 
