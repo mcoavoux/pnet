@@ -258,7 +258,12 @@ def compute_fscore(gold, predictions):
         recall = tp / all_gold
     if precision != 0 and recall != 0:
         f = 2 * precision * recall / (precision + recall)
-    return precision, recall, f
+    
+    p = round(precision * 100, 4)
+    r = round(recall * 100, 4)
+    f = round(f * 100, 4)
+    
+    return p, r, f
 
 class PrModel:
     

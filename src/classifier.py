@@ -14,6 +14,8 @@ class MLP:
         self.parameters.append((model.add_parameters((dim_out, dim_hidden)),
                                 model.add_parameters((dim_out))))
         self.activation = activation
+        
+        self.dim_out = dim_out
 
     def compute_output_layer(self, input):
         res = [input]
@@ -52,29 +54,53 @@ class MLP_sigmoid(MLP):
                  res.append(self.activation(W * res[-1] + b))
         return res
 
-    def get_loss(self, input, targets, epsilon = 1e-10):
-        layers = self.compute_output_layer(input)
-        
-        dim = layers[-1].dim()[0][0]
-        ts = np.ones(dim)
-        for t in targets:
-            ts[t] = 0
-        
-        e = dy.inputTensor(ts)
-        me = - e
-        last = dy.cmult(layers[-1], me) + e
-        
-        #print(last.value())
-        
-        return - dy.sum_elems(dy.log(last + epsilon))
 
     def get_prediction(self, input):
         layers = self.compute_output_layer(input)
         output = layers[-1].value()
         res = {i for i in output if i > 0.5}
         return res
-    
+
+
     def get_loss_and_prediction(self, input, targets, epsilon = 1e-10):
+        layers = self.compute_output_layer(input)
+        output = layers[-1].value()
+        res = {i for i in output if i > 0.5}
+        
+        log_out = dy.log(layers[-1] + epsilon)
+        
+        loss = dy.zeros(1)
+        for t in targets:
+            loss += dy.pick(log_out, t)
+        
+        r = np.random.randint(self.dim_out)
+        while r in targets:
+            r = np.random.randint(self.dim_out)
+        loss += dy.log(1 - dy.pick(layers[-1], r) + epsilon)
+        #loss -= dy.pick(log_out, r)
+        
+        return - loss, res
+
+
+    def get_loss(self, input, targets, epsilon = 1e-10):
+        layers = self.compute_output_layer(input)
+        
+        log_out = dy.log(layers[-1] + epsilon)
+        
+        loss = dy.zeros(1)
+        for t in targets:
+            loss += dy.pick(log_out, t)
+
+        r = np.random.randint(self.dim_out)
+        while r in targets:
+            r = np.random.randint(self.dim_out)
+        loss += dy.log(1 - dy.pick(layers[-1], r) + epsilon)
+        #loss -= dy.pick(log_out, r)
+
+        return - loss
+
+
+    def _get_loss_and_prediction(self, input, targets, epsilon = 1e-10):
         layers = self.compute_output_layer(input)
         dim = layers[-1].dim()[0][0]
         ts = np.ones(dim)
@@ -91,6 +117,21 @@ class MLP_sigmoid(MLP):
         return - dy.sum_elems(dy.log(last + epsilon)), res
 
 
+    def _get_loss(self, input, targets, epsilon = 1e-10):
+        layers = self.compute_output_layer(input)
+        
+        dim = layers[-1].dim()[0][0]
+        ts = np.ones(dim)
+        for t in targets:
+            ts[t] = 0
+        
+        e = dy.inputTensor(ts)
+        me = - e
+        last = dy.cmult(layers[-1], me) + e
+        
+        #print(last.value())
+        
+        return - dy.sum_elems(dy.log(last + epsilon))
 
 
 
