@@ -354,8 +354,8 @@ class PrModel:
             if self.adversary and self.args.dataset == "ag":
                 ftrain = compute_fscore(targets_t, predictions_t)
                 fdev = compute_fscore(targets_d, predictions_d)
-                
-                Fscore = "t = {{}} d = {{}}".format(ftrain, fdev)
+                #print(ftrain, fdev)
+                Fscore = "F: t = {} d = {}".format(ftrain, fdev)
             
             if acc_d > best:
                 best = acc_d
@@ -363,7 +363,7 @@ class PrModel:
                 pref = "ad_" if adversary else ""
                 self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
             
-            print("Epoch {} train: l={} acc={} dev: l={} acc={} F = {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
+            print("Epoch {} train: l={} acc={} dev: l={} acc={} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
         
         self.model.populate("{}/model{}".format(self.output_folder, ibest))
 
@@ -432,8 +432,9 @@ def main(args):
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
-    Fscore = compute_fscore(targets_test, predictions_test)
-    print("\tF = {} ".format(Fscore))
+    if args.dataset == "ag":
+        Fscore = compute_fscore(targets_test, predictions_test)
+        print("\tF = {} ".format(Fscore))
 
     print("Sanity check")
     targets_test = [ex.get_label() for ex in test]
