@@ -53,181 +53,6 @@ def get_aux_labels(examples):
             labels.add(l)
     return labels
 
-"""
-def train_one(trainer, bilstm, example, classifiers, aux=False, use_demographics = False):
-    prefix = get_demographics_prefix(example) if use_demographics else []
-    
-    encoding, transducting = bilstm.build_representations(example.get_sentence(), training=True, prefix = prefix)
-    if not aux:
-        target = example.get_label()
-        loss = classifiers.get_loss(encoding, target)
-    else:
-        targets = example.get_aux_labels()
-        loss = dy.esum([classifiers[i].get_loss(encoding, t) for i, t in enumerate(targets)])
-    
-    loss.backward()
-    self.trainer.update()
-
-def evaluate_one(bilstm, example, main_classifier, aux_classifiers, adversary=False, use_demographics = False):
-    prefix = get_demographics_prefix(example) if use_demographics else []
-
-    encoding, transducting = bilstm.build_representations(example.get_sentence(), training=False, prefix = prefix)
-    
-    input = encoding
-    if adversary:
-        input = dy.concatenate(main_classifier.compute_output_layer(encoding)[:-1])
-        input = dy.nobackprop(input)
-
-    
-    if main_classifier != None and not adversary:
-        loss, prediction = main_classifier.get_loss_and_prediction(input, example.get_label())
-        res = [(loss.value(), 1 if example.get_label() == prediction else 0)]
-    else:
-        loss, prediction = None, None
-        res = [(0,0)]
-    
-    targets = example.get_aux_labels()
-    if aux_classifiers is not None:
-        for i, c in enumerate(aux_classifiers):
-            l, p = c.get_loss_and_prediction(input, targets[i])
-            
-            acc = 1 if targets[i] == p else 0
-            res.append((l.value(), acc))
-    return res[0], res[1:]
-
-def evaluate(bilstm, dataset, main_classifier, aux_classifiers, adversary=False, use_demographics = False):
-    loss = 0
-    acc = 0
-    bilstm.disable_dropout()
-    if aux_classifiers is not None:
-        aux_losses = [0 for _ in aux_classifiers]
-        aux_accs = [0 for _ in aux_classifiers]
-    
-    tot = len(dataset)
-    for example in dataset:
-        
-        main, aux = evaluate_one(bilstm, example, main_classifier, aux_classifiers, adversary, use_demographics = use_demographics)
-        if main != (None, None):
-            loss += main[0]
-            acc += main[1]
-        
-        if aux_classifiers is not None:
-            for i in range(len(aux)):
-                aux_losses[i] += aux[i][0]
-                aux_accs[i] += aux[i][1]
-    if aux_classifiers is not None:
-        aux_res = list(zip([l / tot for l in aux_losses], [a / tot * 100 for a in aux_accs]))
-    else:
-        aux_res = []
-    return (loss / tot, acc / tot * 100), aux_res
-
-def train_model(model, output_folder, trainer, bilstm, sentiment_classifier, epochs, train, dev, aux_classifiers=None, lr=0.001, dc=1e-6, use_demographics=False):
-    
-    random.shuffle(train)
-    sample_train = train[:len(dev)]
-    trainer.learning_rate = lr
-    n_updates = 0
-
-    best = 0
-    ibest=0
-    
-    for epoch in range(epochs):
-        random.shuffle(train)
-        bilstm.set_dropout(0.2)
-        for i, example in enumerate(train):
-            sys.stderr.write("\r{}%".format(i / len(train) * 100))
-            train_one(trainer, bilstm, example, sentiment_classifier, False, use_demographics = use_demographics)
-            
-            if aux_classifiers is not None:
-                train_one(trainer, bilstm, example, aux_classifiers, True)
-            
-            trainer.learning_rate = lr / (1 + n_updates * dc)
-        
-        sys.stderr.write("\r")
-        
-        main_t, aux_t = evaluate(bilstm, sample_train, sentiment_classifier, aux_classifiers, use_demographics =use_demographics)
-        main_d, aux_d = evaluate(bilstm, dev, sentiment_classifier, aux_classifiers, use_demographics =use_demographics)
-
-        losst, acct = main_t
-        lossd, accd = main_d
-        losst, acct, lossd, accd = list(map(lambda x : round(x, 4), [losst, acct, lossd, accd]))
-        
-        if accd > best:
-            best = accd
-            ibest=epoch
-            model.save("{}/model{}".format(output_folder, ibest))
-        
-        if aux_classifiers is not None:
-            aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
-            aux_dev = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_d])
-            
-            print("Epoch {} train: l={} acc={} aux={} dev: l={} acc={} aux={}".format(epoch, losst, acct, aux_train, lossd, accd, aux_dev))
-        else:
-            print("Epoch {} train: l={} acc={} dev: l={} acc={}".format(epoch, losst, acct, lossd, accd))
-    
-    model.populate("{}/model{}".format(output_folder, ibest))
-
-
-
-def train_one_adversary(trainer, bilstm, example, sentiment_classifier, adversary_classifiers, use_demographics):
-    prefix = get_demographics_prefix(example) if use_demographics else []
-    encoding, transducting = bilstm.build_representations(example.get_sentence(), training=True, prefix=prefix)
-    
-    input_adversary = dy.concatenate(sentiment_classifier.compute_output_layer(encoding)[:-1])
-    input_adversary = dy.nobackprop(input_adversary)
-    
-    targets = example.get_aux_labels()
-    loss = dy.esum([adversary_classifiers[i].get_loss(input_adversary, t) for i, t in enumerate(targets)])
-    
-    loss.backward()
-    trainer.update()
-
-
-def train_adversary(model, output_folder, trainer, bilstm, sentiment_classifier, adversary_classifiers, epochs, train, dev, lr=0.001, dc=1e-6, use_demographics=False):
-    random.shuffle(train)
-    sample_train = train[:len(dev)]
-    trainer.learning_rate = lr
-    n_updates = 0
-
-    #best = [0] * len(adversary_classifiers)
-    #ibest= [0] * len(adversary_classifiers)
-    best = 0
-    ibest = 0
-
-    for epoch in range(epochs):
-        random.shuffle(train)
-        bilstm.set_dropout(0.2)
-        for i, example in enumerate(train):
-            sys.stderr.write("\r{}%".format(i / len(train) * 100))
-            
-            train_one_adversary(trainer, bilstm, example, sentiment_classifier, adversary_classifiers, use_demographics)
-            
-            trainer.learning_rate = lr / (1 + n_updates * dc)
-        
-        sys.stderr.write("\r")
-        
-        main_t, aux_t= evaluate(bilstm, sample_train, sentiment_classifier, adversary_classifiers, adversary=True, use_demographics=use_demographics)
-        main_d, aux_d = evaluate(bilstm, dev, sentiment_classifier, adversary_classifiers, adversary=True, use_demographics=use_demographics)
-        
-        #losst, acct = main_t
-        #lossd, accd = main_d
-        #losst, acct, lossd, accd = list(map(lambda x : round(x, 4), [losst, acct, lossd, accd]))
-        
-        sum_score = sum([r[1] for r in aux_d])
-        if sum_score > best:
-            best = sum_score
-            ibest = epoch
-            model.save("{}/model_aux{}".format(output_folder, ibest))
-        
-
-        aux_train = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_t])
-        aux_dev = " ".join(["l={} a={}".format(round(l, 4), round(a, 4)) for l, a in aux_d])
-        
-        print("Epoch {} train-adv={} dev-adv={}".format(epoch, aux_train, aux_dev))
-    
-    model.populate("{}/model_aux{}".format(output_folder, ibest))
-"""
-
 
 def compute_fscore(gold, predictions):
     
@@ -428,11 +253,13 @@ def main(args):
     #### add adversary classifier
     mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
     
+    print("Train main task")
     mod.train_main(train, dev)
     targets_test = [ex.get_label() for ex in test]
     loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
     
+    print("Train adversary")
     mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
