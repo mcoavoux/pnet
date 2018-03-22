@@ -28,7 +28,6 @@ def print_data_distributions(dataset):
     mfb = max(dist)
     print("Distribution, main labels: ", dist, " Most frequent baseline : {}".format(100 * mfb))
 
-    
     d = d_aux / total
     print("Aux distributions / priors : ", d)
 
@@ -223,7 +222,7 @@ def main(args):
     
     labels_adve_task = get_aux_labels(train)
     
-    print("Train size: {}".format(len(train))
+    print("Train size: {}".format(len(train)))
     print("Dev size:   {}".format(len(dev)))
     print("Test size:  {}".format(len(test)))
     
@@ -247,7 +246,7 @@ def main(args):
     input_size = bilstm.size()
     main_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
-    trainer = dy.SimpleSGDTrainer(model)
+    trainer = dy.AdamTrainer(model)
     
     if args.subset:
         train = train[:args.subset]
@@ -269,13 +268,20 @@ def main(args):
     loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
     
+    trainer.restart()
     print("Train adversary")
     mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
-    Fscore = compute_eval_metrics(mod.adversary_classifier.output_size(), targets_test, predictions_test)
-    print("\tF = {} ".format(Fscore))
+    outsize = mod.adversary_classifier.output_size()
+    Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
+    print("\tF          = {} ".format(Fscore))
+    preds = [set() for _ in targets_test]
+    Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
+    print("\tF baseline = {} ".format(Fscore))
+
+
 
     print("Sanity check")
     targets_test = [ex.get_label() for ex in test]
@@ -300,8 +306,8 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
     
-    parser.add_argument("--decay-constant", type=float, default=1e-6)
-    parser.add_argument("--learning-rate", type=float, default=0.01)
+    parser.add_argument("--decay-constant", type=float, default=1e-7)
+    parser.add_argument("--learning-rate", type=float, default=0.001)
     parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
     parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
     
