@@ -63,7 +63,7 @@ def load_NER(dataset, final_file):
             res.append(sline)
     return res
 
-def tags_NE(dataset, idcorpus, k=100):
+def tags_NE(dataset, idcorpus, k=10, filter={'PERSON'}):
     final_file = "../tools/ner_{}".format(idcorpus)
     if not os.path.isfile(final_file):
         nes = save_NER(dataset, final_file)
@@ -73,7 +73,8 @@ def tags_NE(dataset, idcorpus, k=100):
     counts = defaultdict(int)
     for e in nes:
         for ne in e:
-            counts[ne] += 1
+            if ne[0] in filter:
+                counts[ne] += 1
     
     k_most_freq = set(sorted(counts, key = lambda x : counts[x], reverse=True)[:k])
     mapping = {e : i for i, e in enumerate(k_most_freq)}
@@ -81,8 +82,13 @@ def tags_NE(dataset, idcorpus, k=100):
     for e in k_most_freq:
         print(e, counts[e])
     
+    newdataset = []
     for example, ne in zip(dataset, nes):
-        example.metadata = {mapping[e] for e in ne if e in k_most_freq}
+        meta = {mapping[e] for e in ne if e in k_most_freq}
+        if len(meta) > 0:
+            example.metadata = meta
+            newdataset.append(example)
+    return newdataset
 
 
 def NER_stanford(sentence_list, idcorpus):

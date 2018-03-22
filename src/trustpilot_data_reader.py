@@ -32,16 +32,16 @@ Structure of an example
 # Metadata 
 GENDER, BIRTH = 0, 1
 
-map_gender={'F':0, 'M':1}
+map_gender={'F':True, 'M':False}
 
 def bucket_age(birth_date, date):
     birth_date = int(birth_date)
     year = int(date.split("-")[0])
     
     if year - birth_date > 45:
-        return 0
+        return False
     if year - birth_date < 35:
-        return 1
+        return True
     
     return None
 
@@ -72,8 +72,13 @@ def construct_examples(raw_data):
             age = bucket_age(o['birth_year'], d['date'])
             
             if age != None:
-            
-                ex = Example(review, int(d['rating']) - 1, metadata=[gen, age])
+                
+                meta = set()
+                if gen:
+                    meta.add(GENDER)
+                if age:
+                    meta.add(BIRTH)
+                ex = Example(review, int(d['rating']) - 1, metadata=meta)
                 examples.append(ex)
     return examples
 

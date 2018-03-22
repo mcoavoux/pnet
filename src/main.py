@@ -11,28 +11,33 @@ from vocabulary import *
 
 def print_data_distributions(dataset):
     main = defaultdict(int)
-    aux = [defaultdict(int), defaultdict(int)]
+    aux = defaultdict(int)
+    total = len(dataset)
     for example in dataset:
         label = example.get_label()
         main[label] += 1
         meta = example.get_aux_labels()
-        for count, v in zip(aux, meta):
-            count[v] += 1
-    d_main = np.array(list(main.values()))
-    d_aux = [np.array(list(v.values())) for v in aux]
+        for caracteristic in meta:
+            aux[caracteristic] += 1
     
-    dist = d_main / d_main.sum()
+    d_main = np.array(list(main.values()))
+    d_aux  = np.array(list(aux.values()))
+
+    assert(d_main.sum() == total)
+    dist = d_main / total
     mfb = max(dist)
     print("Distribution, main labels: ", dist, " Most frequent baseline : {}".format(100 * mfb))
-    for d in d_aux:
-        d = d / d.sum()
-        mfb = max(d)
-        print("Aux distribution : ", d,  " Most frequent baseline : {}".format(100 * mfb))
+
+    
+    d = d_aux / total
+    print("Aux distributions / priors : ", d)
 
 
 def get_demographics_prefix(example):
     aux = example.get_aux_labels()
-    return ["<g={}>".format(aux[0]), "<a={}>".format(aux[0])]
+    gen = "F" if trustpilot_data_reader.GENDER in aux else "M"
+    age = "O" if trustpilot_data_reader.BIRTH in aux else "U"
+    return ["<g={}>".format(gen), "<a={}>".format(age)]
 
 
 def extract_vocabulary(dataset, add_symbols=None):
@@ -54,15 +59,11 @@ def get_aux_labels(examples):
     return labels
 
 
-def compute_fscore(gold, predictions):
+def compute_eval_metrics(n_tasks, gold, predictions):
     
     tp = 0
     all_pred = 0
     all_gold = 0
-    
-    #fp = 0
-    #fn = 0
-    #gc = 0
     
     for gs, ps in zip(gold, predictions):
         ctp = len([i for i in gs if i in ps])
@@ -70,10 +71,6 @@ def compute_fscore(gold, predictions):
         
         all_pred += len(ps)
         all_gold += len(gs)
-        #cfp = len([i for i in ps if i not in gs])
-        #cfn = len([i for i in gs if i not in ps])
-        #fp += cfp
-        #fn += cfn
     precision = 0
     recall = 0
     f = 0
@@ -84,11 +81,20 @@ def compute_fscore(gold, predictions):
     if precision != 0 and recall != 0:
         f = 2 * precision * recall / (precision + recall)
     
-    p = round(precision * 100, 4)
-    r = round(recall * 100, 4)
-    f = round(f * 100, 4)
+    p = round(precision * 100, 2)
+    r = round(recall * 100, 2)
+    f = round(f * 100, 2)
     
-    return p, r, f
+    
+    acc_all = [0] * n_tasks
+    for gs, ps in zip(gold, predictions):
+        for i in range(n_tasks):
+            if (i in gs) == (i in ps):
+                acc_all[i] += 1
+    
+    acc_all = [round(i * 100 / len(gold), 2) for i in acc_all]
+    
+    return p, r, f, acc_all
 
 class PrModel:
     
@@ -181,9 +187,9 @@ class PrModel:
             loss_d, acc_d, predictions_d = self.evaluate(dev, targets_d, classifier, adversary)
             
             Fscore = ""
-            if self.adversary and self.args.dataset == "ag":
-                ftrain = compute_fscore(targets_t, predictions_t)
-                fdev = compute_fscore(targets_d, predictions_d)
+            if self.adversary:
+                ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
+                fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
                 #print(ftrain, fdev)
                 Fscore = "F: t = {} d = {}".format(ftrain, fdev)
             
@@ -193,9 +199,9 @@ class PrModel:
                 pref = "ad_" if adversary else ""
                 self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
             
-            print("Epoch {} train: l={} acc={} dev: l={} acc={} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
+            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
         
-        self.model.populate("{}/model{}".format(self.output_folder, ibest))
+        self.model.populate("{}/{}model{}".format(self.output_folder, pref, ibest))
 
     def train_main(self, train, dev):
         get_label = lambda ex: ex.get_label()
@@ -216,6 +222,10 @@ def main(args):
     labels_main_task = set([ex.get_label() for ex in train])
     
     labels_adve_task = get_aux_labels(train)
+    
+    print("Train size: {}".format(len(train))
+    print("Dev size:   {}".format(len(dev)))
+    print("Test size:  {}".format(len(test)))
     
     print("Train data distribution")
     print_data_distributions(train)
@@ -245,10 +255,10 @@ def main(args):
 
     input_size += args.hidden_layers * args.dim_hidden
     output_size = len(labels_adve_task)
-    if args.adversary_type == "softmax":
-        adversary_classifier = MLP(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
-    else:
-        adversary_classifier = MLP_sigmoid(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    #if args.adversary_type == "softmax":
+        #adversary_classifier = MLP(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    #else:
+    adversary_classifier = MLP_sigmoid(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
 
     #### add adversary classifier
     mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
@@ -264,9 +274,8 @@ def main(args):
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
-    if args.dataset == "ag":
-        Fscore = compute_fscore(targets_test, predictions_test)
-        print("\tF = {} ".format(Fscore))
+    Fscore = compute_eval_metrics(mod.adversary_classifier.output_size(), targets_test, predictions_test)
+    print("\tF = {} ".format(Fscore))
 
     print("Sanity check")
     targets_test = [ex.get_label() for ex in test]

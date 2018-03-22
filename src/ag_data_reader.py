@@ -62,7 +62,7 @@ def get_dataset():
             d = []
         i += 1
 
-    ner.tags_NE(examples, "ag_corpus")
+    examples = ner.tags_NE(examples, "ag_corpus")
     
     random.shuffle(examples)
     
