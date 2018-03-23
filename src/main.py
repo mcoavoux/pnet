@@ -214,7 +214,7 @@ def main(args):
     import dynet as dy
     
     if args.dataset == "ag":
-        train, dev, test = ag_data_reader.get_dataset()
+        train, dev, test = ag_data_reader.get_dataset(args.num_NE)
     else:
         train, dev, test = trustpilot_data_reader.get_dataset()
     
@@ -329,6 +329,8 @@ if __name__ == "__main__":
     parser.add_argument("--use-char-lstm", action="store_true", help="Use a character LSTM, [default=false]")
     
     parser.add_argument("--subset", "-S", type=int, default=None, help="Train on a subset of n examples for debugging")
+    
+    parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities")
 
     args = parser.parse_args()
     

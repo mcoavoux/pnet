@@ -18,6 +18,9 @@ from collections import defaultdict
 #st = CoreNLPNERTagger()
 
 
+replace = {"Bush": "George_W._Bush",
+           "Kerry":"John_Kerry",
+           "Arafat": "Yasser_Arafat"}
 
 def get_NE(example):
     sentence = example.get_sentence()
@@ -72,11 +75,15 @@ def tags_NE(dataset, idcorpus, k=10, filter={'PERSON'}):
     
     counts = defaultdict(int)
     for e in nes:
-        for ne in e:
+        for i in range(len(e)):
+            ne = e[i]
             if ne[0] in filter:
+                if ne[1] in replace:
+                    ne = ne[0], replace[ne[1]]
+                    e[i] = ne
                 counts[ne] += 1
     
-    k_most_freq = set(sorted(counts, key = lambda x : counts[x], reverse=True)[:k])
+    k_most_freq = sorted(counts, key = lambda x : counts[x], reverse=True)[:k]
     mapping = {e : i for i, e in enumerate(k_most_freq)}
     
     for e in k_most_freq:

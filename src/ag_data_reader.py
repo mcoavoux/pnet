@@ -26,7 +26,7 @@ def count_NE(dataset):
                 counts[e] += 1
     return counts
 
-def get_dataset():
+def get_dataset(k = 4):
     
     keys = ["source", "url", "title", "image", "category", "description", "rank", "pubdate"]
     filename = "../datasets/newsspace200.xml"
@@ -62,7 +62,7 @@ def get_dataset():
             d = []
         i += 1
 
-    examples = ner.tags_NE(examples, "ag_corpus")
+    examples = ner.tags_NE(examples, "ag_corpus", k=k)
     
     random.shuffle(examples)
     
