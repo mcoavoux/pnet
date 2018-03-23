@@ -273,12 +273,14 @@ def main(args):
     mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
+    
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
     outsize = mod.adversary_classifier.output_size()
     Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
     print("\tF          = {} ".format(Fscore))
+    
     preds = [set() for _ in targets_test]
-    Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
+    Fscore = compute_eval_metrics(outsize, targets_test, preds)
     print("\tF baseline = {} ".format(Fscore))
 
 
