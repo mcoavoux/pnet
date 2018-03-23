@@ -114,9 +114,9 @@ class PrModel:
         
         self.adversary = False
 
-    def get_input(self, example, training):
+    def get_input(self, example, training, do_not_renew=False):
         prefix = get_demographics_prefix(example) if self.args.use_demographics else []
-        encoding, transducting = self.bilstm.build_representations(example.get_sentence(), training=training, prefix = prefix)
+        encoding, transducting = self.bilstm.build_representations(example.get_sentence(), training=training, prefix = prefix, do_not_renew=do_not_renew)
         
         if self.adversary:
             hidden_layers = self.main_classifier.compute_output_layer(encoding)[:-1]
@@ -152,10 +152,34 @@ class PrModel:
             loss += l.value()
         return loss / tot, acc / tot * 100, predictions
 
-    def _train(self, train, dev, epochs, classifier, get_label, adversary):
+    def compute_hamming(self, e1, e2):
+        n_output = self.adversary_classifier.output_size()
+        m1 = e1.get_aux_labels()
+        m2 = e2.get_aux_labels()
+        res = 0
+        for i in range(n_output):
+            if (i in m1) == (i in m2):
+                res += 1
+        return res / n_output
 
-        lr = args.learning_rate
-        dc = args.decay_constant
+    def privacy_train(self, example, train):
+
+        sampled_example = np.random.choice(train)
+        
+        input_e1 = self.get_input(example, True)
+        input_e2 = self.get_input(sampled_example, True, do_not_renew=True)
+        
+        hamming = self.compute_hamming(example, sampled_example)
+        
+        loss = hamming * dy.squared_norm(input_e1 - input_e2)
+        loss.backward()
+
+        self.trainer.update()
+
+    def _train(self, train, dev, epochs, classifier, get_label, adversary):
+        
+        lr = self.args.learning_rate
+        dc = self.args.decay_constant
         
         self.adversary = adversary
 
@@ -175,6 +199,10 @@ class PrModel:
                 
                 self.train_one(example, get_label(example), classifier)
                 self.trainer.learning_rate = lr / (1 + n_updates * dc)
+                
+                if not adversary and self.args.ptraining:
+                    self.privacy_train(example, train)
+                
                 n_updates += 1
             
             sys.stderr.write("\r")
@@ -333,6 +361,9 @@ if __name__ == "__main__":
     parser.add_argument("--subset", "-S", type=int, default=None, help="Train on a subset of n examples for debugging")
     
     parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities")
+
+
+    parser.add_argument("--ptraining", action="store_true", help="Add anti-adversarial training with method *fancy name*")
 
     args = parser.parse_args()
     
