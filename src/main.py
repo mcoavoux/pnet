@@ -213,15 +213,21 @@ class PrModel:
             loss_t, acc_t, predictions_t = self.evaluate(sample_train, targets_t, classifier, adversary)
             loss_d, acc_d, predictions_d = self.evaluate(dev, targets_d, classifier, adversary)
             
+            cmpare = acc_d
+            
             Fscore = ""
             if self.adversary:
                 ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
                 fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
                 #print(ftrain, fdev)
                 Fscore = "F: t = {} d = {}".format(ftrain, fdev)
+                
+                cmpare = fdev[2]
             
-            if acc_d > best:
-                best = acc_d
+            
+            
+            if cmpare > best:
+                best = cmpare
                 ibest = epoch
                 pref = "ad_" if adversary else ""
                 self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
@@ -229,14 +235,16 @@ class PrModel:
             print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
         
         self.model.populate("{}/{}model{}".format(self.output_folder, pref, ibest))
+        
+        return best
 
     def train_main(self, train, dev):
         get_label = lambda ex: ex.get_label()
-        self._train(train, dev, args.iterations, self.main_classifier, get_label, False)
+        return self._train(train, dev, args.iterations, self.main_classifier, get_label, False)
 
     def train_adversary(self, train, dev):
         get_label = lambda ex: ex.get_aux_labels()
-        self._train(train, dev, args.iterations_adversary, self.adversary_classifier, get_label, True)
+        return self._train(train, dev, args.iterations_adversary, self.adversary_classifier, get_label, True)
 
 def main(args):
     import dynet as dy
@@ -264,6 +272,7 @@ def main(args):
     print_data_distributions(test)
 
 
+    results = {}
 
     model = dy.Model()
     
@@ -291,14 +300,16 @@ def main(args):
     mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
     
     print("Train main task")
-    mod.train_main(train, dev)
+    results["main dev acc"] = mod.train_main(train, dev)
+    
     targets_test = [ex.get_label() for ex in test]
     loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
+    results["main test acc"] = acc_test
     
     trainer.restart()
     print("Train adversary")
-    mod.train_adversary(train, dev)
+    results["adv dev F"] = mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     
@@ -307,16 +318,32 @@ def main(args):
     Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
     print("\tF          = {} ".format(Fscore))
     
+    results["adv test precision"] = Fscore[0]
+    results["adv test recall"] = Fscore[1]
+    results["adv test fscore"] = Fscore[2]
+    for i, acc in enumerate(Fscore[3]):
+        results["adv test acc task {}".format(i)] = acc
+    
     preds = [set() for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
     print("\tF baseline = {} ".format(Fscore))
+    
+    
+    for k in results:
+        if type(results[k]) == float:
+            results[k] = round(results[k], 2)
+    
+    keys = sorted(results)
+
+    print("\t".join(keys))
+    print("\t".join(map(str, [results[k] for k in keys])))
 
 
 
-    print("Sanity check")
-    targets_test = [ex.get_label() for ex in test]
-    loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
-    print("\t Test results : l={} acc={}".format(loss_test, acc_test))
+    #print("Sanity check")
+    #targets_test = [ex.get_label() for ex in test]
+    #loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
+    #print("\t Test results : l={} acc={}".format(loss_test, acc_test))
 
 
 if __name__ == "__main__":
