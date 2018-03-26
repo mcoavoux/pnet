@@ -171,7 +171,7 @@ class PrModel:
         
         hamming = self.compute_hamming(example, sampled_example)
         
-        loss = hamming * dy.squared_norm(input_e1 - input_e2)
+        loss = args.alpha * hamming * dy.squared_norm(input_e1 - input_e2)
         loss.backward()
 
         self.trainer.update()
@@ -285,7 +285,9 @@ def main(args):
     input_size = bilstm.size()
     main_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
-    trainer = dy.SimpleSGDTrainer(model)
+    trainer = dy.AdamTrainer(model)
+    
+    args.learning_rate = trainer.learning_rate
     
     if args.subset:
         train = train[:args.subset]
@@ -336,6 +338,10 @@ def main(args):
     for k in results:
         if type(results[k]) == float:
             results[k] = round(results[k], 2)
+    
+    results["#w"] = args.dim_word
+    results["#W"] = args.dim_wrnn
+    results["#Zalpha"] = args.alpha
     
     keys = sorted(results)
 
@@ -395,6 +401,7 @@ if __name__ == "__main__":
 
 
     parser.add_argument("--ptraining", action="store_true", help="Add anti-adversarial training with method *fancy name*")
+    parser.add_argument("--alpha", type=float, default=0.01, help="scaling value for anti adversary loss")
 
     args = parser.parse_args()
     
