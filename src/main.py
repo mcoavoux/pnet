@@ -190,6 +190,9 @@ class PrModel:
 
         best = 0
         ibest=0
+        
+        
+        pref = "ad_" if adversary else "" # for output model name
     
         for epoch in range(epochs):
             random.shuffle(train)
@@ -226,10 +229,9 @@ class PrModel:
             
             
             
-            if cmpare > best:
+            if cmpare >= best:
                 best = cmpare
                 ibest = epoch
-                pref = "ad_" if adversary else ""
                 self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
             
             print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
@@ -283,7 +285,7 @@ def main(args):
     input_size = bilstm.size()
     main_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
-    trainer = dy.AdamTrainer(model)
+    trainer = dy.SimpleSGDTrainer(model)
     
     if args.subset:
         train = train[:args.subset]
@@ -300,16 +302,16 @@ def main(args):
     mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
     
     print("Train main task")
-    results["main dev acc"] = mod.train_main(train, dev)
+    results["0_main_dev_acc"] = mod.train_main(train, dev)
     
     targets_test = [ex.get_label() for ex in test]
     loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
-    results["main test acc"] = acc_test
+    results["1_main_test_acc"] = acc_test
     
     trainer.restart()
     print("Train adversary")
-    results["adv dev F"] = mod.train_adversary(train, dev)
+    results["2_adv_dev_F"] = mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     
@@ -318,15 +320,17 @@ def main(args):
     Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
     print("\tF          = {} ".format(Fscore))
     
-    results["adv test precision"] = Fscore[0]
-    results["adv test recall"] = Fscore[1]
-    results["adv test fscore"] = Fscore[2]
+    results["3_adv_test_fscore"] = Fscore[2]
+    results["4_adv_test_precision"] = Fscore[0]
+    results["5_adv_test_recall"] = Fscore[1]
     for i, acc in enumerate(Fscore[3]):
-        results["adv test acc task {}".format(i)] = acc
+        results["{}_adv_test_acc_task_{}".format(i+6, i)] = acc
     
     preds = [set() for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
-    print("\tF baseline = {} ".format(Fscore))
+    baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]
+    print("baseline=")
+    print("\t".join(map(str, baseline_str)))
     
     
     for k in results:
@@ -363,8 +367,8 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
     
-    parser.add_argument("--decay-constant", type=float, default=1e-7)
-    parser.add_argument("--learning-rate", type=float, default=0.001)
+    parser.add_argument("--decay-constant", type=float, default=1e-6)
+    parser.add_argument("--learning-rate", type=float, default=0.1)
     parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
     parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
     
