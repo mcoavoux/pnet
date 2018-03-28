@@ -304,16 +304,16 @@ def main(args):
     mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
     
     print("Train main task")
-    results["0_main_dev_acc"] = mod.train_main(train, dev)
+    results["000_main_dev_acc"] = mod.train_main(train, dev)
     
     targets_test = [ex.get_label() for ex in test]
     loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
-    results["1_main_test_acc"] = acc_test
+    results["001_main_test_acc"] = acc_test
     
     trainer.restart()
     print("Train adversary")
-    results["2_adv_dev_F"] = mod.train_adversary(train, dev)
+    results["002_adv_dev_F"] = mod.train_adversary(train, dev)
     targets_test = [ex.get_aux_labels() for ex in test]
     loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
     
@@ -322,17 +322,17 @@ def main(args):
     Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
     print("\tF          = {} ".format(Fscore))
     
-    results["3_adv_test_fscore"] = Fscore[2]
-    results["4_adv_test_precision"] = Fscore[0]
-    results["5_adv_test_recall"] = Fscore[1]
+    results["003_adv_test_fscore"] = Fscore[2]
+    results["004_adv_test_precision"] = Fscore[0]
+    results["005_adv_test_recall"] = Fscore[1]
     for i, acc in enumerate(Fscore[3]):
-        results["{}_adv_test_acc_task_{}".format(i+6, i)] = acc
+        results["{}_adv_test_acc_task_{}".format(str(i+6).zfill(3), i)] = acc
     
     preds = [set() for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
     baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]
     print("baseline=")
-    print("\t".join(map(str, baseline_str)))
+    print(("\t" * 6) + "\t".join(map(str, baseline_str)))
     
     
     for k in results:
