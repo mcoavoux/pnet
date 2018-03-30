@@ -1,17 +1,38 @@
+
 from collections import defaultdict
+import sys
+import _dynet as dy
 
 import imdb_data_reader
 import trustpilot_data_reader
 import ag_data_reader
 
-from classifier import *
-from example import *
-from bilstm import *
-from vocabulary import *
+from classifier import MLP, MLP_sigmoid
+from example import Example
+from bilstm import HierarchicalBiLSTM
+from vocabulary import Vocabulary, TypedEncoder
+import vocabulary
+from discriminator import Discriminator
+
+def compute_conditional_baseline(cond_aux, main):
+    results = []
+    n_examples = sum(main.values())
+    p_y = [main[v] / n_examples for v in sorted(main)]
+    assert(abs(sum(p_y) - 1.0) < 1e-7)
+    for task in cond_aux:
+        distributions = [cond_aux[task][label] / main[label] for label in sorted(main)]
+        baselines = [max(d, 1 -d) for d in distributions]
+        cond_baseline = sum([p * b for p, b in zip(baselines, p_y)])
+        results.append(cond_baseline)
+    
+    return results
 
 def print_data_distributions(dataset):
     main = defaultdict(int)
     aux = defaultdict(int)
+    
+    cond_aux = defaultdict(lambda:defaultdict(int))
+    
     total = len(dataset)
     for example in dataset:
         label = example.get_label()
@@ -19,6 +40,7 @@ def print_data_distributions(dataset):
         meta = example.get_aux_labels()
         for caracteristic in meta:
             aux[caracteristic] += 1
+            cond_aux[caracteristic][label] += 1
     
     d_main = np.array(list(main.values()))
     d_aux  = np.array(list(aux.values()))
@@ -26,10 +48,17 @@ def print_data_distributions(dataset):
     assert(d_main.sum() == total)
     dist = d_main / total
     mfb = max(dist)
-    print("Distribution, main labels: ", dist, " Most frequent baseline : {}".format(100 * mfb))
+    print("Distribution_main_labels: ", dist, " Most frequent baseline : {}".format(100 * mfb))
 
     d = d_aux / total
-    print("Aux distributions / priors : ", d)
+    db = [max(c, 1-c) for c in d]
+    print("Aux_distributions_priors:   ", "\t".join(map(lambda x : str(round(x,4)), d)))
+    print("Aux_distributions_baselines:", "\t".join(map(lambda x : str(round(x,4)), db)))
+    
+    cond_baselines = compute_conditional_baseline(cond_aux, main)
+    #print(cond_baselines)
+    print("Aux_distrib_cond_baselines: ", "\t".join(map(lambda x : str(round(x,4)), cond_baselines)))
+
 
 
 def get_demographics_prefix(example):
@@ -95,9 +124,10 @@ def compute_eval_metrics(n_tasks, gold, predictions):
     
     return p, r, f, acc_all
 
+
 class PrModel:
     
-    def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier):
+    def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier, discriminator):
         
         self.args = args
         
@@ -113,6 +143,8 @@ class PrModel:
         self.adversary_classifier = adversary_classifier
         
         self.adversary = False
+        
+        self.discriminator = discriminator
 
     def get_input(self, example, training, do_not_renew=False):
         prefix = get_demographics_prefix(example) if self.args.use_demographics else []
@@ -176,6 +208,25 @@ class PrModel:
 
         self.trainer.update()
 
+    def discriminator_train(self, example):
+        self.adversary = True
+        
+        real_labels = example.get_aux_labels()
+        n_labels = self.adversary_classifier.output_size()
+        fake_labels = set([i for i in range(n_labels) if i not in real_labels])
+        
+        input = self.get_input(example, training=True, do_not_renew=False)
+        input_noback = dy.nobackprop(input)
+        
+        real_loss = self.discriminator.train_real(input_noback, real_labels)
+        fake_loss = self.discriminator.train_fake(input, fake_labels)
+        fake_loss.backward()
+        self.trainer.update()
+        
+        self.adversary = False
+        
+        return real_loss.value()
+
     def _train(self, train, dev, epochs, classifier, get_label, adversary):
         
         lr = self.args.learning_rate
@@ -193,10 +244,14 @@ class PrModel:
         
         
         pref = "ad_" if adversary else "" # for output model name
-    
+        
+        
+        
         for epoch in range(epochs):
             random.shuffle(train)
             self.bilstm.set_dropout(0.2)
+            
+            discriminator_loss = 0
             for i, example in enumerate(train):
                 sys.stderr.write("\r{}%".format(i / len(train) * 100))
                 
@@ -206,9 +261,17 @@ class PrModel:
                 if not adversary and self.args.ptraining:
                     self.privacy_train(example, train)
                 
+                if not adversary and self.args.atraining:
+                    discriminator_loss += self.discriminator_train(example)
+                
                 n_updates += 1
             
             sys.stderr.write("\r")
+            
+            discriminator_summary = ""
+            if not adversary and self.args.atraining:
+                discriminator_summary = "D loss = {}".format(discriminator_loss/ len(train))
+
             
             targets_t = [get_label(ex) for ex in sample_train]
             targets_d = [get_label(ex) for ex in dev]
@@ -227,14 +290,12 @@ class PrModel:
                 
                 cmpare = fdev[2]
             
-            
-            
             if cmpare >= best:
                 best = cmpare
                 ibest = epoch
                 self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
             
-            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
+            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore, discriminator_summary), flush=True)
         
         self.model.populate("{}/{}model{}".format(self.output_folder, pref, ibest))
         
@@ -299,9 +360,13 @@ def main(args):
         #adversary_classifier = MLP(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
     #else:
     adversary_classifier = MLP_sigmoid(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
+    
+    discriminator = None
+    if args.atraining:
+        discriminator = Discriminator(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model, trainer)
 
     #### add adversary classifier
-    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier)
+    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier, discriminator)
     
     print("Train main task")
     results["000_main_dev_acc"] = mod.train_main(train, dev)
@@ -399,8 +464,8 @@ if __name__ == "__main__":
     
     parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities")
 
-
-    parser.add_argument("--ptraining", action="store_true", help="Add anti-adversarial training with method *fancy name*")
+    parser.add_argument("--atraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
+    parser.add_argument("--ptraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--alpha", type=float, default=0.01, help="scaling value for anti adversary loss")
 
     args = parser.parse_args()
