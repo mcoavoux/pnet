@@ -347,7 +347,7 @@ def main(args):
     main_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
     trainer = dy.AdamTrainer(model)
-    trainer.set_clip_threshold(-5, 5)
+    trainer.set_clip_threshold(5)
     
     args.learning_rate = trainer.learning_rate
     
