@@ -398,19 +398,25 @@ def main(args):
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
     baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]
     print("baseline=")
-    print(("\t" * 6) + "\t".join(map(str, baseline_str)))
+    print(("\t" * 7) + "\t".join(map(str, baseline_str)))
     
     
     for k in results:
         if type(results[k]) == float:
             results[k] = round(results[k], 2)
     
+    
+    results["#H"] = args.dim_hidden
+    results["#h"] = args.hidden_layers
     results["#w"] = args.dim_word
     results["#W"] = args.dim_wrnn
+    results["#Zatr"] = int(args.atraining)
+    results["#Zptr"] = int(args.ptraining)
     results["#Zalpha"] = args.alpha
     
     keys = sorted(results)
-
+    
+    print("Model\t", end="")
     print("\t".join(keys))
     print("\t".join(map(str, [results[k] for k in keys])))
 
