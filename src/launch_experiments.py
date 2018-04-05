@@ -53,7 +53,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     
-    parser.add_argument("data", type=str, choices=["ag", "tp"], help="dataset")
+    parser.add_argument("data", type=str, choices=["ag", "tp", "dw"], help="dataset")
     parser.add_argument("output", type=str, help="output folder")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of iterations per experiment")
