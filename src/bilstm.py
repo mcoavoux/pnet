@@ -65,7 +65,7 @@ class HierarchicalBiLSTM:
 
     def build_representations_bi(self, sentence, training, prefix = [], do_not_renew=False):
         if not do_not_renew:
-            dy.renew_cg()
+            dy.renew_cg(immediate_compute = True, check_validity = True)
         coded_sentence = self.vocabulary.code_sentence_cw(sentence, training)
         coded_prefix = self.vocabulary.code_sentence_cw(prefix, training)
         
@@ -86,7 +86,7 @@ class HierarchicalBiLSTM:
 
     def build_representations_mono(self, sentence, training, prefix = [], do_not_renew=False):
         if not do_not_renew:
-            dy.renew_cg()
+            dy.renew_cg(immediate_compute = True, check_validity = True)
         coded_sentence = self.vocabulary.code_sentence_cw(sentence, training)
         coded_prefix = self.vocabulary.code_sentence_cw(prefix, training)
         
