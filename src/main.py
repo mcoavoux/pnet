@@ -6,6 +6,7 @@ import _dynet as dy
 import imdb_data_reader
 import trustpilot_data_reader
 import ag_data_reader
+import dw_data_reader
 
 from classifier import MLP, MLP_sigmoid
 from example import Example
@@ -312,10 +313,16 @@ class PrModel:
 def main(args):
     import dynet as dy
     
-    if args.dataset == "ag":
-        train, dev, test = ag_data_reader.get_dataset(args.num_NE)
-    else:
-        train, dev, test = trustpilot_data_reader.get_dataset()
+    get_data = {"ag": lambda : ag_data_reader.get_dataset(args.num_NE),
+                "dw": lambda : dw_data_reader.get_dataset(args.num_NE),
+                "tp": trustpilot_data_reader.get_dataset}
+    
+    train, dev, test = get_data[args.dataset]()
+    
+    #if args.dataset == "ag":
+        #train, dev, test = ag_data_reader.get_dataset(args.num_NE)
+    #else:
+        #train, dev, test = trustpilot_data_reader.get_dataset()
     
     labels_main_task = set([ex.get_label() for ex in train])
     
@@ -440,7 +447,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
-    parser.add_argument("dataset", choices=["ag", "tp"], help="Dataset")
+    parser.add_argument("dataset", choices=["ag", "tp", "dw"], help="Dataset")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
