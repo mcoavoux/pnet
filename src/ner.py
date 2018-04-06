@@ -66,7 +66,7 @@ def load_NER(dataset, final_file):
             res.append(sline)
     return res
 
-def tags_NE(dataset, idcorpus, k=10, filter={'PERSON'}):
+def tags_NE(dataset, idcorpus, k=10, filter={'PERSON'}, keep_negatives=False):
     final_file = "../tools/ner_{}".format(idcorpus)
     if not os.path.isfile(final_file):
         nes = save_NER(dataset, final_file)
@@ -95,6 +95,8 @@ def tags_NE(dataset, idcorpus, k=10, filter={'PERSON'}):
         if len(meta) > 0:
             example.metadata = meta
             newdataset.append(example)
+        elif keep_negatives:
+            example.metadata = set()
     return newdataset
 
 

@@ -17,32 +17,34 @@ from example import Example
 
 
 
-def read_one_json(filename, cmap):
+def read_one_json(filename, cmap, train):
     with open(filename) as json_data:
         d = json.load(json_data)
         json_data.close()
         #text = d['teaser']
         try:
-            if "text" not in d:
+            if "text" not in d or len(d["text"].strip().split()) == 0:
                 return None
             text = d['text']
             if d["categoryName"] in cmap:
                 label = cmap[d["categoryName"]]
-            else:
+            elif train:
                 label = len(cmap)
                 cmap[d["categoryName"]] = label
+            else:
+                return None
             example = Example(text, label)
             return example
         except KeyError:
             pprint(d)
             
     
-def read_from_folder(folder, categories_map):
+def read_from_folder(folder, categories_map, train):
     corpus = []
     for filename in os.listdir(folder):
         if filename.endswith(".json"):
             f = "{}/{}".format(folder, filename)
-            example = read_one_json(f, categories_map)
+            example = read_one_json(f, categories_map, train)
             if example is None:
                 continue
             corpus.append(example)
@@ -56,11 +58,11 @@ def get_dataset(k=10):
     test_dir = folder.format("test")
     
     cmap = {}
-    train = read_from_folder(train_dir, cmap)
-    dev = read_from_folder(dev_dir, cmap)
-    test = read_from_folder(test_dir, cmap)
+    train = read_from_folder(train_dir, cmap, True)
+    dev = read_from_folder(dev_dir, cmap, False)
+    test = read_from_folder(test_dir, cmap, False)
     
-    examples = ner.tags_NE(train + dev + test, "dw_corpus", k=k)
+    ner.tags_NE(train + dev + test, "dw_corpus", k=k, keep_negatives=True)
     return train, dev, test
     
 
