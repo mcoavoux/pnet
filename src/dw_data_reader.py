@@ -31,7 +31,7 @@ def read_one_json(filename, cmap):
             else:
                 label = len(cmap)
                 cmap[d["categoryName"]] = label
-            example = Example(text, cmap)
+            example = Example(text, label)
             return example
         except KeyError:
             pprint(d)
