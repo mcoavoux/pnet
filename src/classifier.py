@@ -30,7 +30,7 @@ class MLP:
                  res.append(self.activation(W * res[-1] + b))
         return res
 
-    def get_loss(self, input, target, epsilon = 1e-10)):
+    def get_loss(self, input, target, epsilon = 1e-10):
         layers = self.compute_output_layer(input)
         return - dy.log(dy.pick(layers[-1], target) + epsilon)
 
@@ -38,7 +38,7 @@ class MLP:
         layers = self.compute_output_layer(input)
         return np.argmax(layers[-1].value())
     
-    def get_loss_and_prediction(self, input, target, epsilon = 1e-10)):
+    def get_loss_and_prediction(self, input, target, epsilon = 1e-10):
         layers = self.compute_output_layer(input)
         return - dy.log(dy.pick(layers[-1], target) + epsilon), np.argmax(layers[-1].value())
 
