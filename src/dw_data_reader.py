@@ -68,7 +68,7 @@ def get_dataset(k=10):
     dev =   [e for e in dev   if e.get_aux_labels() != None and len(e.get_aux_labels()) > 0]
     test =  [e for e in test  if e.get_aux_labels() != None and len(e.get_aux_labels()) > 0]
     
-    labels = "<UNK>" + sorted(set([e.get_label() for e in train]))
+    labels = ["<UNK>"] + sorted(set([e.get_label() for e in train]))
     
     labels_map = {l : i for i,l in enumerate(labels)}
     for e in train + dev + test:
