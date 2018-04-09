@@ -64,9 +64,9 @@ def get_dataset(k=10):
     
     ner.tags_NE(train + dev + test, "dw_corpus", k=k, keep_negatives=False)
     
-    train = [e for e in train if len(e.get_aux_labels()) > 0]
-    dev = [e for e in dev if len(e.get_aux_labels()) > 0]
-    test = [e for e in test if len(e.get_aux_labels()) > 0]
+    train = [e for e in train if e != None and len(e.get_aux_labels()) > 0]
+    dev = [e for e in dev if e != None and len(e.get_aux_labels()) > 0]
+    test = [e for e in test if e != None and len(e.get_aux_labels()) > 0]
     
     return train, dev, test
     
