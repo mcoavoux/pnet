@@ -19,6 +19,10 @@ def generate_command_lines(args):
             if args.use_demographics:
                 others += " -D "
             
+            if args.data != "tp":
+                others += " -k {} ".format(args.num_NE)
+            
+            
             options_all = options_tpl.format(i=args.iterations, L=L, l=l, w=w, W=W, D=others)
             
             ptraining = ["--ptraining --alpha {}".format(a) for a in args.alpha]
