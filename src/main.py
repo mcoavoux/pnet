@@ -59,6 +59,7 @@ def print_data_distributions(dataset):
     cond_baselines = compute_conditional_baseline(cond_aux, main)
     #print(cond_baselines)
     print("Aux_distrib_cond_baselines: ", "\t".join(map(lambda x : str(round(x,4)), cond_baselines)))
+    return mfb
 
 
 
@@ -333,14 +334,13 @@ def main(args):
     print("Test size:  {}".format(len(test)))
     
     print("Train data distribution")
-    print_data_distributions(train)
+    mfb_train = print_data_distributions(train)
 
     print("Dev data distribution")
-    print_data_distributions(dev)
+    mfb_dev = print_data_distributions(dev)
 
     print("Test data distribution")
-    print_data_distributions(test)
-
+    mfb_test = print_data_distributions(test)
 
     results = {}
 
@@ -404,8 +404,9 @@ def main(args):
     preds = [set() for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
     baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]
-    print("baseline=")
-    print(("\t" * 7) + "\t".join(map(str, baseline_str)))
+    
+    line = ["Baseline", "0", "0", "0", "0", "0", "0", "0", str(round(mfb_train * 100, 2)), str(round(mfb_test*100, 2)), "0"]
+    print("\t".join(line) + "\t" + "\t".join(map(str, baseline_str)))
     
     
     for k in results:
