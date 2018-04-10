@@ -71,11 +71,17 @@ def get_dataset(k=10):
     labels = ["<UNK>"] + sorted(set([e.get_label() for e in train]))
     
     labels_map = {l : i for i,l in enumerate(labels)}
+    
+    Max = max(labels_map.values())
+    assert(Max +1 == len(labels_map))
+
     for e in train + dev + test:
         if e.label in labels_map:
             e.label = labels_map[e.label]
         else:
             e.label = 0
+        assert(e.label in labels_map)
+        assert(e.label <= Max)
     
     return train, dev, test
     
