@@ -87,7 +87,10 @@ def tags_NE(dataset, idcorpus, k=10, filter={'PERSON'}, keep_negatives=False):
     mapping = {e : i for i, e in enumerate(k_most_freq)}
     
     for e in k_most_freq:
-        print(e, counts[e])
+        try:
+            print(e, counts[e])
+        except:
+            print(type(e), type(counts[e]))
     
     newdataset = []
     for example, ne in zip(dataset, nes):
