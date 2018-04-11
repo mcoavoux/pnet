@@ -326,6 +326,8 @@ def main(args):
         #train, dev, test = trustpilot_data_reader.get_dataset()
     
     labels_main_task = set([ex.get_label() for ex in train])
+    labels_main_task.add(0)
+    
     if sorted(labels_main_task) != list(range(len(labels_main_task))):
         print(labels_main_task)
         print(list(range(len(labels_main_task))))
