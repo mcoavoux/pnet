@@ -19,7 +19,7 @@ def generate_command_lines(args):
             if args.use_demographics:
                 others += " -D "
             
-            if args.data != "tp":
+            if not args.data.startswith("tp"):
                 others += " -k {} ".format(args.num_NE)
             
             
@@ -57,7 +57,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     
-    parser.add_argument("data", type=str, choices=["ag", "tp", "dw"], help="dataset")
+    parser.add_argument("data", type=str, choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk"], help="dataset")
     parser.add_argument("output", type=str, help="output folder")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of iterations per experiment")
