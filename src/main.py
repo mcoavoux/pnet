@@ -204,8 +204,9 @@ class PrModel:
         input_e2 = self.get_input(sampled_example, True, do_not_renew=True)
         
         hamming = self.compute_hamming(example, sampled_example)
+        assert(hamming >= 0 and hamming <= 1.0)
         
-        loss = args.alpha * hamming * dy.squared_norm(input_e1 - input_e2)
+        loss = args.alpha * (0.5 - hamming) * dy.squared_norm(input_e1 - input_e2)
         loss.backward()
 
         self.trainer.update()
@@ -316,7 +317,11 @@ def main(args):
     
     get_data = {"ag": lambda : ag_data_reader.get_dataset(args.num_NE),
                 "dw": lambda : dw_data_reader.get_dataset(args.num_NE),
-                "tp": trustpilot_data_reader.get_dataset}
+                "tp_fr": lambda : trustpilot_data_reader.get_dataset("fr"),
+                "tp_de": lambda : trustpilot_data_reader.get_dataset("de"),
+                "tp_dk": lambda : trustpilot_data_reader.get_dataset("dk"),
+                "tp_us": lambda : trustpilot_data_reader.get_dataset("us"),
+                "tp_uk": lambda : trustpilot_data_reader.get_dataset("uk")}
     
     train, dev, test = get_data[args.dataset]()
     
@@ -454,7 +459,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
-    parser.add_argument("dataset", choices=["ag", "tp", "dw"], help="Dataset")
+    parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk"], help="Dataset")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")

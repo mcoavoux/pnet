@@ -83,8 +83,15 @@ def construct_examples(raw_data):
     return examples
 
 
-def get_dataset():
-    raw_data = get_raw_data("../datasets/src/france.auto-adjusted_gender.NUTS-regions.jsonl.tmp_filtered")
+def get_dataset(lang):
+    lang_map = {"fr": "france",
+                "de": "germany",
+                "dk": "denmark",
+                "us": "united_states",
+                "uk": "united_kingdom"}
+    
+    filename = "../datasets/src/{}.auto-adjusted_gender.NUTS-regions.jsonl.tmp_filtered".format(lang_map[lang])
+    raw_data = get_raw_data(filename)
     examples = construct_examples(raw_data)
     
     #if add_demographics:
