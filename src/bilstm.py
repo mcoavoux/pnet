@@ -4,6 +4,8 @@ import random
 import numpy as np
 import sys
 
+import vocabulary
+
 F, B = 0, 1
 
 
@@ -29,9 +31,6 @@ class HierarchicalBiLSTM:
 
         self.wrnn = [dy.LSTMBuilder(1, dim_input, args.dim_wrnn, model),
                      dy.LSTMBuilder(1, dim_input, args.dim_wrnn, model)]
-        
-        self.wrnn[0].disable_dropout()
-        self.wrnn[0].disable_dropout()
         
         self.words = model.add_lookup_parameters((vocabulary.size_words(), args.dim_word))
         
@@ -114,6 +113,5 @@ class HierarchicalBiLSTM:
                 c.disable_dropout()
         for w in self.wrnn:
             w.disable_dropout()
-
 
 

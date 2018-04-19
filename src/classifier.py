@@ -16,7 +16,14 @@ class MLP:
         self.activation = activation
         
         self.dim_out = dim_out
-    
+
+    def get_parameter_list(self):
+        res = []
+        for w, b in self.parameters:
+            res.append(w)
+            res.append(b)
+        return res
+
     def output_size(self):
         return self.dim_out
 

@@ -27,7 +27,7 @@ def generate_command_lines(args):
             
             ptraining = ["--ptraining --alpha {}".format(a) for a in args.alpha]
             
-            for o_opts in ["", "--atraining"] + ptraining:
+            for o_opts in ["", "--atraining", "--generator"] + ptraining:
                 
                 options = options_all + "  " + o_opts
                 

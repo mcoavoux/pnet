@@ -13,7 +13,7 @@ from example import Example
 from bilstm import HierarchicalBiLSTM
 from vocabulary import Vocabulary, TypedEncoder
 import vocabulary
-from discriminator import Discriminator
+from discriminator import Discriminator, Generator
 
 def compute_conditional_baseline(cond_aux, main):
     results = []
@@ -129,7 +129,7 @@ def compute_eval_metrics(n_tasks, gold, predictions):
 
 class PrModel:
     
-    def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier, discriminator):
+    def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier, discriminator, generator, voc):
         
         self.args = args
         
@@ -147,26 +147,34 @@ class PrModel:
         self.adversary = False
         
         self.discriminator = discriminator
+        
+        self.generator = generator
+        
+        
+        self.vocabulary = voc
 
-    def get_input(self, example, training, do_not_renew=False):
+    def get_input(self, example, training, do_not_renew=False, backprop=True):
         prefix = get_demographics_prefix(example) if self.args.use_demographics else []
         encoding, transducting = self.bilstm.build_representations(example.get_sentence(), training=training, prefix = prefix, do_not_renew=do_not_renew)
         
-        if self.adversary:
-            hidden_layers = self.main_classifier.compute_output_layer(encoding)[:-1]
-            input_adversary = dy.concatenate(hidden_layers)
-            input_adversary = dy.nobackprop(input_adversary)
-            return input_adversary
-        return encoding
+        if backprop:
+            return encoding
+        else:
+            return dy.nobackprop(encoding)
+        #hidden_layers = self.main_classifier.compute_output_layer(encoding)[:-1]
+        #input_adversary = dy.concatenate(hidden_layers)
+        #input_adversary = dy.nobackprop(input_adversary)
+        #return input_adversary
+        #return encoding
 
     def train_one(self, example, target, classifier):
-        input_vec = self.get_input(example, True)
+        input_vec = self.get_input(example, training=True, backprop=not self.adversary)
         loss = classifier.get_loss(input_vec, target)
         loss.backward()
         self.trainer.update()
 
     def predict(self, example, target, classifier):
-        input_vec = self.get_input(example, False)
+        input_vec = self.get_input(example, training=False)
         loss, prediction = classifier.get_loss_and_prediction(input_vec, target)
         return loss, prediction
 
@@ -200,8 +208,8 @@ class PrModel:
 
         sampled_example = np.random.choice(train)
         
-        input_e1 = self.get_input(example, True)
-        input_e2 = self.get_input(sampled_example, True, do_not_renew=True)
+        input_e1 = self.get_input(example, training=True, do_not_renew=False, backprop=True)
+        input_e2 = self.get_input(sampled_example, True, do_not_renew=True, backprop=True)
         
         hamming = self.compute_hamming(example, sampled_example)
         assert(hamming >= 0 and hamming <= 1.0)
@@ -212,23 +220,48 @@ class PrModel:
         self.trainer.update()
 
     def discriminator_train(self, example):
-        self.adversary = True
+        #self.adversary = True
         
         real_labels = example.get_aux_labels()
         n_labels = self.adversary_classifier.output_size()
         fake_labels = set([i for i in range(n_labels) if i not in real_labels])
         
-        input = self.get_input(example, training=True, do_not_renew=False)
+        input = self.get_input(example, training=True, do_not_renew=False, backprop=True)
         input_noback = dy.nobackprop(input)
         
         real_loss = self.discriminator.train_real(input_noback, real_labels)
         fake_loss = self.discriminator.train_fake(input, fake_labels)
         fake_loss.backward()
+        
+        self.discriminator.zero_gradient()
+        
         self.trainer.update()
         
-        self.adversary = False
+        #self.adversary = False
         
         return real_loss.value()
+
+    def generator_train(self, example):
+        #self.adversary = True
+        text = example.sentence
+        coded_text = self.vocabulary.code_chars(text)
+        
+        input = self.get_input(example, training=True, do_not_renew=False, backprop=True)
+        input_noback = dy.nobackprop(input)
+        
+        real_loss = self.generator.train_real(input_noback, coded_text)
+        
+        fake_loss = - self.generator.train_fake(input, coded_text)
+        fake_loss.backward()
+        
+        self.generator.zero_gradient()
+        
+        self.trainer.update()
+        
+        #self.adversary = False
+        
+        return real_loss.value()
+
 
     def _train(self, train, dev, epochs, classifier, get_label, adversary):
         
@@ -255,6 +288,7 @@ class PrModel:
             self.bilstm.set_dropout(0.2)
             
             discriminator_loss = 0
+            generator_loss = 0
             for i, example in enumerate(train):
                 sys.stderr.write("\r{}%".format(i / len(train) * 100))
                 
@@ -266,6 +300,9 @@ class PrModel:
                 
                 if not adversary and self.args.atraining:
                     discriminator_loss += self.discriminator_train(example)
+                
+                if not adversary and self.args.generator:
+                    generator_loss += self.generator_train(example)
                 
                 n_updates += 1
             
@@ -359,6 +396,7 @@ def main(args):
     
     if args.use_demographics:
         symbols = ["<g={}>".format(i) for i in [0, 1]] + ["<a={}>".format(i) for i in [0, 1]]
+    
     vocabulary = extract_vocabulary(train)
     bilstm = HierarchicalBiLSTM(args, vocabulary, model)
     input_size = bilstm.size()
@@ -373,7 +411,7 @@ def main(args):
         train = train[:args.subset]
         dev = dev[:args.subset]
 
-    input_size += args.hidden_layers * args.dim_hidden
+    #input_size += args.hidden_layers * args.dim_hidden
     output_size = len(labels_adve_task)
     #if args.adversary_type == "softmax":
         #adversary_classifier = MLP(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
@@ -383,9 +421,13 @@ def main(args):
     discriminator = None
     if args.atraining:
         discriminator = Discriminator(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model, trainer)
+    
+    generator = None
+    if args.generator:
+        generator = Generator(args, vocabulary, model, trainer)
 
     #### add adversary classifier
-    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier, discriminator)
+    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier, discriminator, generator, vocabulary)
     
     print("Train main task")
     results["000_main_dev_acc"] = mod.train_main(train, dev)
@@ -493,6 +535,8 @@ if __name__ == "__main__":
     parser.add_argument("--atraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--ptraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--alpha", type=float, default=0.01, help="scaling value for anti adversary loss")
+    
+    parser.add_argument("--generator", default="", help="Fool a generator reconstructor (char, word)")
 
     args = parser.parse_args()
     

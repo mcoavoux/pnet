@@ -22,7 +22,7 @@ class Vocabulary:
         self.chars = set()
         for w in self.words:
             self.chars |= set(w)
-        self.chars = [UNK, UNDEF, START, STOP] + sorted(self.chars)
+        self.chars = [UNK, UNDEF, START, STOP] + sorted(self.chars) + [" "]
         self.c2i = {c: i for i, c in enumerate(self.chars)}
 
     def save(self, filename):
