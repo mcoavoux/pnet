@@ -454,11 +454,13 @@ def main(args):
     for i, acc in enumerate(Fscore[3]):
         results["{}_adv_test_acc_task_{}".format(str(i+6).zfill(3), i)] = acc
     
-    preds = [set() for _ in targets_test]
+    preds = [set(range(outsize)) for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
     baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]
     
-    line = ["Baseline", "0", "0", "0", "0", "0", "0", "0", str(round(mfb_train * 100, 2)), str(round(mfb_test*100, 2)), "0"]
+    
+    
+    line = ["Baseline", "NA", "NA", "NA", "NA", "NA", "NA", "NA", str(round(mfb_train * 100, 2)), str(round(mfb_test*100, 2)), "0"]
     print("\t".join(line) + "\t" + "\t".join(map(str, baseline_str)))
     
     
