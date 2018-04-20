@@ -79,6 +79,9 @@ def construct_examples(raw_data):
                 if age:
                     meta.add(BIRTH)
                 ex = Example(review, int(d['rating']) - 1, metadata=meta)
+                
+                if len(ex.get_sentence()) == 0:
+                    continue
                 examples.append(ex)
     return examples
 
@@ -90,7 +93,11 @@ def get_dataset(lang):
                 "us": "united_states",
                 "uk": "united_kingdom"}
     
-    filename = "../datasets/src/{}.auto-adjusted_gender.NUTS-regions.jsonl.tmp_filtered".format(lang_map[lang])
+    filler = "NUTS-regions"
+    if lang == "us":
+        filler = "geocoded"
+    filename = "../datasets/src/{}.auto-adjusted_gender.{}.jsonl.tmp_filtered".format(lang_map[lang], filler)
+    
     raw_data = get_raw_data(filename)
     examples = construct_examples(raw_data)
     
