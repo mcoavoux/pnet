@@ -54,7 +54,7 @@ class Generator:
         self.h2o = model.add_parameters((self.voc_size, self.dim_lstm))
         self.b  = model.add_parameters((self.voc_size))
     
-    def train_real(self, input, targets):
+    def train_real(self, input, targets, epsilon = 1e-10):
         init_states = [input, dy.zeros(self.dim_lstm)]
         
         state = self.lstm.initial_state(init_states)
@@ -67,7 +67,7 @@ class Generator:
         
         for target in targets[1:]:
             #print(type(W), type(state.output()))
-            loss += dy.pickneglogsoftmax(W * state.output() + b, target)
+            loss += dy.pickneglogsoftmax(W * state.output() + b + epsilon, target)
             
             embedding = self.lu[target]
             state = state.add_input(embedding)
@@ -77,7 +77,7 @@ class Generator:
         
         return loss
 
-    def train_fake(self, input, targets):
+    def train_fake(self, input, targets, epsilon = 1e-10):
         init_states = [input, dy.zeros(self.dim_lstm)]
         
         state = self.lstm.initial_state(init_states)
@@ -89,7 +89,7 @@ class Generator:
         state = state.add_input(self.lu[targets[0]])
         
         for target in targets[1:]:
-            loss += dy.pickneglogsoftmax(W * state.output() + b, target)
+            loss += dy.pickneglogsoftmax(W * state.output() + b + epsilon, target)
             
             embedding = self.lu[target]
             state = state.add_input(embedding)
