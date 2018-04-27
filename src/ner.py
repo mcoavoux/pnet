@@ -20,7 +20,8 @@ from collections import defaultdict
 
 replace = {"Bush": "George_W._Bush",
            "Kerry":"John_Kerry",
-           "Arafat": "Yasser_Arafat"}
+           "Arafat": "Yasser_Arafat",
+           "Merkel": "Angela_Merkel"}
 
 def get_NE(example):
     sentence = example.get_sentence()

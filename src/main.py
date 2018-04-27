@@ -337,17 +337,114 @@ class PrModel:
             
             print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore, discriminator_summary), flush=True)
         
-        self.model.populate("{}/{}model{}".format(self.output_folder, pref, ibest))
+        if epochs > 0:
+            self.model.populate("{}/{}model{}".format(self.output_folder, pref, ibest))
         
         return best
 
     def train_main(self, train, dev):
         get_label = lambda ex: ex.get_label()
-        return self._train(train, dev, args.iterations, self.main_classifier, get_label, False)
+        return self._train(train, dev, self.args.iterations, self.main_classifier, get_label, False)
 
     def train_adversary(self, train, dev):
         get_label = lambda ex: ex.get_aux_labels()
-        return self._train(train, dev, args.iterations_adversary, self.adversary_classifier, get_label, True)
+        return self._train(train, dev, self.args.iterations_adversary, self.adversary_classifier, get_label, True)
+
+    def get_adversary_dataset(self, data):
+        vectors = []
+        for ex in data:
+            input_vec = self.get_input(ex, training=True, backprop=False)
+            
+            pair = (input_vec.value(), ex.get_aux_labels())
+            vectors.append(pair)
+        return vectors
+    
+    def evaluate_adversary(self, dataset, classifier):
+        loss = 0
+        acc = 0
+        tot = len(dataset)
+        
+        predictions = []
+        for i, ex in enumerate(dataset):
+            
+            dy.renew_cg()
+            vec, labels = ex
+            vec = dy.inputVector(vec)
+            
+            l, p = classifier.get_loss_and_prediction(vec, labels)
+            
+            predictions.append(p)
+            if p == labels:
+                acc += 1
+            loss += l.value()
+
+        return loss / tot, acc / tot * 100, predictions
+
+    
+    def train_adversary_bis(self, train, dev, classifier):
+        lr = self.args.learning_rate
+        dc = self.args.decay_constant
+        
+        random.shuffle(train)
+        sample_train = train[:len(dev)]
+        self.trainer.learning_rate = lr
+        
+        epochs = self.args.iterations_adversary
+        
+        n_updates = 0
+        best = 0
+        ibest=0
+        
+        for epoch in range(epochs):
+            random.shuffle(train)
+            
+            for i, example in enumerate(train):
+                
+                dy.renew_cg()
+                
+                vec, label = example
+                vec = dy.inputVector(vec)
+                
+                sys.stderr.write("\r{}%".format(i / len(train) * 100))
+                
+                
+                loss = classifier.get_loss(vec, label)
+                loss.backward()
+                self.trainer.update()
+                self.trainer.learning_rate = lr / (1 + n_updates * dc)
+                
+                n_updates += 1
+            
+            sys.stderr.write("\r")
+            
+            
+            targets_t = [label for _, label in sample_train]
+            targets_d = [label for _, label in dev]
+            
+            loss_t, acc_t, predictions_t = self.evaluate_adversary(sample_train, classifier)
+            loss_d, acc_d, predictions_d = self.evaluate_adversary(dev, classifier)
+            
+            cmpare = acc_d
+            
+            ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
+            fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
+            #print(ftrain, fdev)
+            Fscore = "F: t = {} d = {}".format(ftrain, fdev)
+            cmpare = fdev[2]
+            
+            if cmpare >= best:
+                best = cmpare
+                ibest = epoch
+                self.model.save("{}/{}model{}".format(self.output_folder, "ad_", ibest))
+            
+            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {} ".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
+        
+        if epochs > 0:
+            self.model.populate("{}/{}model{}".format(self.output_folder, "ad_", ibest))
+        
+        return best
+
+
 
 def main(args):
     import dynet as dy
@@ -437,23 +534,43 @@ def main(args):
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
     results["001_main_test_acc"] = acc_test
     
+    
+    
+    ##############
+    ##############
+    ##############
+    ##############
+    ##############
+    ##############
+    ##############    Adversary training / evaluate privacy
+    ##############
+    ##############
+    ##############
+    ##############
+    ##############
+
+    train_hidden, dev_hidden, test_hidden = [mod.get_adversary_dataset(dataset) for dataset in [train, dev, test]]
+    
+    
     trainer.restart()
     print("Train adversary")
-    results["002_adv_dev_F"] = mod.train_adversary(train, dev)
+    results["002_adv_dev_F"] = mod.train_adversary_bis(train_hidden, dev_hidden, mod.adversary_classifier)
     targets_test = [ex.get_aux_labels() for ex in test]
-    loss_test, acc_test, predictions_test = mod.evaluate(test, targets_test, mod.adversary_classifier, True)
+    loss_test, acc_test, predictions_test = mod.evaluate_adversary(test_hidden, mod.adversary_classifier)
     
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
     outsize = mod.adversary_classifier.output_size()
     Fscore = compute_eval_metrics(outsize, targets_test, predictions_test)
     print("\tF          = {} ".format(Fscore))
-    
+
+
     results["003_adv_test_fscore"] = Fscore[2]
     results["004_adv_test_precision"] = Fscore[0]
     results["005_adv_test_recall"] = Fscore[1]
     for i, acc in enumerate(Fscore[3]):
         results["{}_adv_test_acc_task_{}".format(str(i+6).zfill(3), i)] = acc
-    
+
+
     preds = [set(range(outsize)) for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
     baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]

@@ -61,7 +61,7 @@ class MLP_sigmoid(MLP):
             if i == len(self.parameters) - 1:
                 res.append(dy.logistic(W * res[-1] + b))
             else:
-                 res.append(self.activation(W * res[-1] + b))
+                res.append(self.activation(W * res[-1] + b))
         return res
 
 
