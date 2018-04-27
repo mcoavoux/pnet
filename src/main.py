@@ -573,7 +573,8 @@ def main(args):
 
     preds = [set(range(outsize)) for _ in targets_test]
     Fscore = compute_eval_metrics(outsize, targets_test, preds)
-    baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + Fscore[3]
+    
+    baseline_str = [Fscore[2], Fscore[0], Fscore[1]] + [x if x > 50.0 else 100 - x for x in Fscore[3]]
     
     
     
