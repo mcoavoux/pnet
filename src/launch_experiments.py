@@ -7,7 +7,7 @@ import subprocess
 
 def generate_command_lines(args):
     
-    options_tpl = "-i {i} -I {i} -L {L} -l {l} -w {w} -W {W} {D}"
+    options_tpl = "-i {i} -I {I} -L {L} -l {l} -w {w} -W {W} {D}"
     
     
     for l in args.dim_hidden:
@@ -23,7 +23,7 @@ def generate_command_lines(args):
                 others += " -k {} ".format(args.num_NE)
             
             
-            options_all = options_tpl.format(i=args.iterations, L=L, l=l, w=w, W=W, D=others)
+            options_all = options_tpl.format(i=args.iterations, I=args.iterations_adv, L=L, l=l, w=w, W=W, D=others)
             
             ptraining = ["--ptraining --alpha {}".format(a) for a in args.alpha]
             
@@ -60,7 +60,8 @@ if __name__ == "__main__":
     parser.add_argument("data", type=str, choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk"], help="dataset")
     parser.add_argument("output", type=str, help="output folder")
     
-    parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of iterations per experiment")
+    parser.add_argument("--iterations", "-i", type=int, default=10, help="Number of iterations per experiment")
+    parser.add_argument("--iterations-adv", "-I", type=int, default=20, help="Number of iterations for adversary")
     parser.add_argument("--threads", "-N", type=int, default=1, help="Max number of experiments in parallel")
     
     parser.add_argument("--hidden-layers", "-L", type=int, nargs="+", default=[2], help="Number of hidden layers")
