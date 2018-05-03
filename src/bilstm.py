@@ -87,8 +87,11 @@ class HierarchicalBiLSTM:
         if not do_not_renew:
             dy.renew_cg(immediate_compute = True, check_validity = True)
 
+        
         coded_sentence = self.vocabulary.code_sentence_cw(sentence, training)
         coded_prefix = self.vocabulary.code_sentence_cw(prefix, training)
+        #print(prefix)
+        #print(coded_prefix)
         
         w_init_f = self.wrnn[F].initial_state()
 

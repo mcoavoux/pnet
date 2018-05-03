@@ -43,10 +43,10 @@ class Generator:
         self.model = model
         self.trainer = trainer
         
-        if "char" in args.generator:
-            self.voc_size = vocabulary.size_chars()
-        else:
-            self.voc_size = vocabulary.size_words()
+        #if "char" in args.generator:
+        self.voc_size = vocabulary.size_chars()
+        #else:
+        #    self.voc_size = vocabulary.size_words()
         
         self.lu = model.add_lookup_parameters((self.voc_size, self.dim_embeddings))
         self.lstm = dy.LSTMBuilder(1, self.dim_embeddings, self.dim_lstm, model)
@@ -66,7 +66,6 @@ class Generator:
         state = state.add_input(self.lu[targets[0]])
         
         for target in targets[1:]:
-            #print(type(W), type(state.output()))
             loss += dy.pickneglogsoftmax(W * state.output() + b + epsilon, target)
             
             embedding = self.lu[target]

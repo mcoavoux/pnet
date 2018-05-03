@@ -25,7 +25,6 @@ def compute_conditional_baseline(cond_aux, main):
         baselines = [max(d, 1 -d) for d in distributions]
         cond_baseline = sum([p * b for p, b in zip(baselines, p_y)])
         results.append(cond_baseline)
-    
     return results
 
 def print_data_distributions(dataset):
@@ -62,7 +61,6 @@ def print_data_distributions(dataset):
     return mfb
 
 
-
 def get_demographics_prefix(example):
     aux = example.get_aux_labels()
     gen = "F" if trustpilot_data_reader.GENDER in aux else "M"
@@ -90,7 +88,6 @@ def get_aux_labels(examples):
 
 
 def compute_eval_metrics(n_tasks, gold, predictions):
-    
     tp = 0
     all_pred = 0
     all_gold = 0
@@ -126,73 +123,47 @@ def compute_eval_metrics(n_tasks, gold, predictions):
     
     return p, r, f, acc_all
 
-
 class PrModel:
     
-    def __init__(self, args, model, trainer, bilstm, main_classifier, aux_classifier, adversary_classifier, discriminator, generator, voc):
-        
+    def __init__(self, args, model, trainer, bilstm, main_classifier, adversary_classifier, discriminator, generator, voc):
         self.args = args
         
+        self.vocabulary = voc
         self.model = model
         self.trainer = trainer
-        
         self.output_folder = args.output
+        
         self.bilstm = bilstm
-        
+
         self.main_classifier = main_classifier
-        
-        self.aux_classifiers = aux_classifier
         self.adversary_classifier = adversary_classifier
-        
-        self.adversary = False
-        
         self.discriminator = discriminator
-        
         self.generator = generator
         
-        
-        self.vocabulary = voc
+        #self.adversary = False
+
+    def _get_input(self, example, training, do_not_renew, backprop):
+        prefix = get_demographics_prefix(example) if self.args.use_demographics else []
+        encoding, _ = self.bilstm.build_representations(example.get_sentence(), training=training, prefix = prefix, do_not_renew=do_not_renew)
+        return encoding
 
     def get_input(self, example, training, do_not_renew=False, backprop=True):
-        prefix = get_demographics_prefix(example) if self.args.use_demographics else []
-        encoding, transducting = self.bilstm.build_representations(example.get_sentence(), training=training, prefix = prefix, do_not_renew=do_not_renew)
-        
+        encoding = self._get_input(example, training, do_not_renew, backprop)
         if backprop:
             return encoding
         else:
             return dy.nobackprop(encoding)
-        #hidden_layers = self.main_classifier.compute_output_layer(encoding)[:-1]
-        #input_adversary = dy.concatenate(hidden_layers)
-        #input_adversary = dy.nobackprop(input_adversary)
-        #return input_adversary
-        #return encoding
 
-    def train_one(self, example, target, classifier):
-        input_vec = self.get_input(example, training=True, backprop=not self.adversary)
-        loss = classifier.get_loss(input_vec, target)
-        loss.backward()
-        self.trainer.update()
+    #def train_one(self, example, target, classifier):
+        #input_vec = self.get_input(example, training=True, backprop=not self.adversary)
+        #loss = classifier.get_loss(input_vec, target)
+        #loss.backward()
+        #self.trainer.update()
 
-    def predict(self, example, target, classifier):
-        input_vec = self.get_input(example, training=False)
-        loss, prediction = classifier.get_loss_and_prediction(input_vec, target)
-        return loss, prediction
-
-    def evaluate(self, dataset, targets, classifier, adversary):
-        self.adversary = adversary
-        loss = 0
-        acc = 0
-        tot = len(dataset)
-        assert(len(targets) == len(dataset))
-        self.bilstm.disable_dropout()
-        predictions = []
-        for i, ex in enumerate(dataset):
-            l, p = self.predict(ex, targets[i], classifier)
-            predictions.append(p)
-            if p == targets[i]:
-                acc += 1
-            loss += l.value()
-        return loss / tot, acc / tot * 100, predictions
+    #def predict(self, example, target, classifier):
+        #input_vec = self.get_input(example, training=False)
+        #loss, prediction = classifier.get_loss_and_prediction(input_vec, target)
+        #return loss, prediction
 
     def compute_hamming(self, e1, e2):
         n_output = self.adversary_classifier.output_size()
@@ -209,7 +180,7 @@ class PrModel:
         sampled_example = np.random.choice(train)
         
         input_e1 = self.get_input(example, training=True, do_not_renew=False, backprop=True)
-        input_e2 = self.get_input(sampled_example, True, do_not_renew=True, backprop=True)
+        input_e2 = self.get_input(sampled_example, training=True, do_not_renew=True, backprop=True)
         
         hamming = self.compute_hamming(example, sampled_example)
         assert(hamming >= 0 and hamming <= 1.0)
@@ -220,8 +191,7 @@ class PrModel:
         self.trainer.update()
 
     def discriminator_train(self, example):
-        #self.adversary = True
-        
+
         real_labels = example.get_aux_labels()
         n_labels = self.adversary_classifier.output_size()
         fake_labels = set([i for i in range(n_labels) if i not in real_labels])
@@ -237,15 +207,13 @@ class PrModel:
         
         self.trainer.update()
         
-        #self.adversary = False
-        
         return real_loss.value()
 
     def generator_train(self, example):
-        #self.adversary = True
+
         text = example.sentence
         coded_text = self.vocabulary.code_chars(text)
-        
+
         input = self.get_input(example, training=True, do_not_renew=False, backprop=True)
         input_noback = dy.nobackprop(input)
         
@@ -258,17 +226,32 @@ class PrModel:
         
         self.trainer.update()
         
-        #self.adversary = False
-        
         return real_loss.value()
 
+    def evaluate_main(self, dataset, targets):
+        loss = 0
+        acc = 0
+        tot = len(dataset)
+        assert(len(targets) == len(dataset))
+        self.bilstm.disable_dropout()
+        predictions = []
+        for i, ex in enumerate(dataset):
+            #l, p = self.predict(ex, targets[i], self.main_classifier)
+            #def predict(self, example, target, classifier):
+            input_vec = self.get_input(ex, training=False, do_not_renew = False)
+            l, p = self.main_classifier.get_loss_and_prediction(input_vec, targets[i])
+            #return loss, prediction
+            
+            predictions.append(p)
+            if p == targets[i]:
+                acc += 1
+            loss += l.value()
+        return loss / tot, acc / tot * 100, predictions
 
-    def _train(self, train, dev, epochs, classifier, get_label, adversary):
+    def train_main(self, train, dev):
         
         lr = self.args.learning_rate
         dc = self.args.decay_constant
-        
-        self.adversary = adversary
 
         random.shuffle(train)
         sample_train = train[:len(dev)]
@@ -278,12 +261,7 @@ class PrModel:
         best = 0
         ibest=0
         
-        
-        pref = "ad_" if adversary else "" # for output model name
-        
-        
-        
-        for epoch in range(epochs):
+        for epoch in range(self.args.iterations):
             random.shuffle(train)
             self.bilstm.set_dropout(0.2)
             
@@ -292,65 +270,76 @@ class PrModel:
             for i, example in enumerate(train):
                 sys.stderr.write("\r{}%".format(i / len(train) * 100))
                 
-                self.train_one(example, get_label(example), classifier)
+                #self.train_one(example, get_label(example), classifier)
+                #def train_one(self, example, target, classifier):
+                target = example.get_label()
+                input_vec = self.get_input(example, training=True, backprop=True)
+                loss = self.main_classifier.get_loss(input_vec, target)
+                loss.backward()
+                self.trainer.update()
+
+                # learning rate decay
                 self.trainer.learning_rate = lr / (1 + n_updates * dc)
                 
-                if not adversary and self.args.ptraining:
+                if self.args.ptraining:
                     self.privacy_train(example, train)
                 
-                if not adversary and self.args.atraining:
+                if self.args.atraining:
                     discriminator_loss += self.discriminator_train(example)
                 
-                if not adversary and self.args.generator:
+                if self.args.generator:
                     generator_loss += self.generator_train(example)
                 
                 n_updates += 1
             
             sys.stderr.write("\r")
             
-            discriminator_summary = ""
-            if not adversary and self.args.atraining:
-                discriminator_summary = "D loss = {}".format(discriminator_loss/ len(train))
+            extra_info = ""
+            if self.args.atraining:
+                extra_info = "D loss = {}".format(discriminator_loss/ len(train))
+            if self.args.generator:
+                extra_info = "G loss = {}".format(generator_loss / len(train))
 
             
-            targets_t = [get_label(ex) for ex in sample_train]
-            targets_d = [get_label(ex) for ex in dev]
+            targets_t = [ex.get_label() for ex in sample_train]
+            targets_d = [ex.get_label() for ex in dev]
             
-            loss_t, acc_t, predictions_t = self.evaluate(sample_train, targets_t, classifier, adversary)
-            loss_d, acc_d, predictions_d = self.evaluate(dev, targets_d, classifier, adversary)
+            loss_t, acc_t, predictions_t = self.evaluate_main(sample_train, targets_t)
+            loss_d, acc_d, predictions_d = self.evaluate_main(dev, targets_d)
             
             cmpare = acc_d
             
-            Fscore = ""
-            if self.adversary:
-                ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
-                fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
-                #print(ftrain, fdev)
-                Fscore = "F: t = {} d = {}".format(ftrain, fdev)
+            #Fscore = ""
+            #if self.adversary:
+                #ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
+                #fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
+                ##print(ftrain, fdev)
+                #Fscore = "F: t = {} d = {}".format(ftrain, fdev)
                 
-                cmpare = fdev[2]
+                #cmpare = fdev[2]
             
             if cmpare >= best:
                 best = cmpare
                 ibest = epoch
-                self.model.save("{}/{}model{}".format(self.output_folder, pref, ibest))
+                self.model.save("{}/main_model{}".format(self.output_folder, ibest))
             
-            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore, discriminator_summary), flush=True)
+            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, extra_info), flush=True)
         
-        if epochs > 0:
-            self.model.populate("{}/{}model{}".format(self.output_folder, pref, ibest))
+        if self.args.iterations > 0:
+            self.model.populate("{}/main_model{}".format(self.output_folder, ibest))
         
         return best
 
-    def train_main(self, train, dev):
-        get_label = lambda ex: ex.get_label()
-        return self._train(train, dev, self.args.iterations, self.main_classifier, get_label, False)
+    #def train_main(self, train, dev):
+        #get_label = lambda ex: ex.get_label()
+        #return self._train(train, dev, self.args.iterations, self.main_classifier, get_label, False)
 
-    def train_adversary(self, train, dev):
-        get_label = lambda ex: ex.get_aux_labels()
-        return self._train(train, dev, self.args.iterations_adversary, self.adversary_classifier, get_label, True)
+    #def train_adversary(self, train, dev):
+        #get_label = lambda ex: ex.get_aux_labels()
+        #return self._train(train, dev, self.args.iterations_adversary, self.adversary_classifier, get_label, True)
 
     def get_adversary_dataset(self, data):
+        self.bilstm.disable_dropout()
         vectors = []
         for ex in data:
             input_vec = self.get_input(ex, training=True, backprop=False)
@@ -359,7 +348,7 @@ class PrModel:
             vectors.append(pair)
         return vectors
     
-    def evaluate_adversary(self, dataset, classifier):
+    def evaluate_adversary(self, dataset):
         loss = 0
         acc = 0
         tot = len(dataset)
@@ -371,7 +360,7 @@ class PrModel:
             vec, labels = ex
             vec = dy.inputVector(vec)
             
-            l, p = classifier.get_loss_and_prediction(vec, labels)
+            l, p = self.adversary_classifier.get_loss_and_prediction(vec, labels)
             
             predictions.append(p)
             if p == labels:
@@ -381,7 +370,7 @@ class PrModel:
         return loss / tot, acc / tot * 100, predictions
 
     
-    def train_adversary_bis(self, train, dev, classifier):
+    def train_adversary(self, train, dev):
         lr = self.args.learning_rate
         dc = self.args.decay_constant
         
@@ -395,7 +384,7 @@ class PrModel:
         best = 0
         ibest=0
         
-        for epoch in range(epochs):
+        for epoch in range(self.args.iterations_adversary):
             random.shuffle(train)
             
             for i, example in enumerate(train):
@@ -407,8 +396,7 @@ class PrModel:
                 
                 sys.stderr.write("\r{}%".format(i / len(train) * 100))
                 
-                
-                loss = classifier.get_loss(vec, label)
+                loss = self.adversary_classifier.get_loss(vec, label)
                 loss.backward()
                 self.trainer.update()
                 self.trainer.learning_rate = lr / (1 + n_updates * dc)
@@ -421,28 +409,106 @@ class PrModel:
             targets_t = [label for _, label in sample_train]
             targets_d = [label for _, label in dev]
             
-            loss_t, acc_t, predictions_t = self.evaluate_adversary(sample_train, classifier)
-            loss_d, acc_d, predictions_d = self.evaluate_adversary(dev, classifier)
+            loss_t, acc_t, predictions_t = self.evaluate_adversary(sample_train)
+            loss_d, acc_d, predictions_d = self.evaluate_adversary(dev)
             
             cmpare = acc_d
             
-            ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
-            fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
-            #print(ftrain, fdev)
+            ftrain = compute_eval_metrics(self.adversary_classifier.output_size(), targets_t, predictions_t)
+            fdev = compute_eval_metrics(self.adversary_classifier.output_size(), targets_d, predictions_d)
+
             Fscore = "F: t = {} d = {}".format(ftrain, fdev)
             cmpare = fdev[2]
+            
+            if "tp" in self.args.dataset:
+                acc_all = fdev[3]
+                cmpare = sum(acc_all) / len(acc_all)
+            
             
             if cmpare >= best:
                 best = cmpare
                 ibest = epoch
-                self.model.save("{}/{}model{}".format(self.output_folder, "ad_", ibest))
+                self.model.save("{}/adverse_model{}".format(self.output_folder, ibest))
             
             print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {} ".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
         
         if epochs > 0:
-            self.model.populate("{}/{}model{}".format(self.output_folder, "ad_", ibest))
+            self.model.populate("{}/adverse_model{}".format(self.output_folder, ibest))
         
         return best
+
+
+    def train_baseline(self, train, dev, test, epochs):
+
+        lr = self.args.learning_rate
+        dc = self.args.decay_constant
+
+        random.shuffle(train)
+        sample_train = train[:len(dev)]
+        self.trainer.learning_rate = lr
+        n_updates = 0
+
+        best = 0
+        ibest=0
+        
+        for epoch in range(epochs):
+            random.shuffle(train)
+            self.bilstm.set_dropout(0.2)
+            
+            for i, example in enumerate(train):
+                sys.stderr.write("\r{}%".format(i / len(train) * 100))
+                
+                #self.train_one(example, example.get_aux_labels(), classifier)
+                target = example.get_aux_labels()
+                
+                input_vec = self.get_input(example, training=True, backprop=True, do_not_renew = False)
+                loss = self.adversary_classifier.get_loss(input_vec, target)
+                loss.backward()
+                self.trainer.update()
+
+                self.trainer.learning_rate = lr / (1 + n_updates * dc)
+                
+                n_updates += 1
+            
+            sys.stderr.write("\r")
+            
+            targets_t = [ex.get_aux_labels() for ex in sample_train]
+            targets_d = [ex.get_aux_labels() for ex in dev]
+            
+            dataset_t = self.get_adversary_dataset(sample_train)
+            dataset_d = self.get_adversary_dataset(dev)
+            
+            loss_t, acc_t, predictions_t = self.evaluate_adversary(dataset_t)
+            loss_d, acc_d, predictions_d = self.evaluate_adversary(dataset_d)
+            
+            ftrain = compute_eval_metrics(self.adversary_classifier.output_size(), targets_t, predictions_t)
+            fdev = compute_eval_metrics(self.adversary_classifier.output_size(), targets_d, predictions_d)
+            
+            Fscore = "F: t = {} d = {}".format(ftrain, fdev)
+            cmpare = fdev[2]
+            
+            if "tp" in self.args.dataset:
+                acc_all = fdev[3]
+                cmpare = sum(acc_all) / len(acc_all)
+            
+            if cmpare >= best:
+                best = cmpare
+                ibest = epoch
+                self.model.save("{}/_baseline_model{}".format(self.output_folder, ibest))
+            
+            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, Fscore), flush=True)
+        
+        if epochs > 0:
+            self.model.populate("{}/_baseline_model{}".format(self.output_folder, ibest))
+        
+        targets_t = [ex.get_aux_labels() for ex in test]
+        dataset_t = self.get_adversary_dataset(test)
+        loss_t, acc_t, predictions_t = self.evaluate_adversary(dataset_t)
+        #, targets_t, classifier, False)
+        
+        ftest = compute_eval_metrics(self.adversary_classifier.output_size(), targets_t, predictions_t)
+        
+        return acc_t, ftest
 
 
 
@@ -459,18 +525,10 @@ def main(args):
     
     train, dev, test = get_data[args.dataset]()
     
-    #if args.dataset == "ag":
-        #train, dev, test = ag_data_reader.get_dataset(args.num_NE)
-    #else:
-        #train, dev, test = trustpilot_data_reader.get_dataset()
-    
     labels_main_task = set([ex.get_label() for ex in train])
     labels_main_task.add(0)
     
-    if sorted(labels_main_task) != list(range(len(labels_main_task))):
-        print(labels_main_task)
-        print(list(range(len(labels_main_task))))
-        exit(1)
+    assert(sorted(labels_main_task) == list(range(len(labels_main_task))))
     
     labels_adve_task = get_aux_labels(train)
     
@@ -491,10 +549,10 @@ def main(args):
 
     model = dy.Model()
     
-    if args.use_demographics:
-        symbols = ["<g={}>".format(i) for i in [0, 1]] + ["<a={}>".format(i) for i in [0, 1]]
+    #if args.use_demographics:
+    symbols = ["<g={}>".format(i) for i in ["F", "M"]] + ["<a={}>".format(i) for i in ["U", "O"]]
+    vocabulary = extract_vocabulary(train, add_symbols=symbols)
     
-    vocabulary = extract_vocabulary(train)
     bilstm = HierarchicalBiLSTM(args, vocabulary, model)
     input_size = bilstm.size()
     main_classifier = MLP(input_size, len(labels_main_task), args.hidden_layers, args.dim_hidden, dy.rectify, model)
@@ -508,11 +566,7 @@ def main(args):
         train = train[:args.subset]
         dev = dev[:args.subset]
 
-    #input_size += args.hidden_layers * args.dim_hidden
     output_size = len(labels_adve_task)
-    #if args.adversary_type == "softmax":
-        #adversary_classifier = MLP(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
-    #else:
     adversary_classifier = MLP_sigmoid(input_size, output_size, args.hidden_layers, args.dim_hidden, dy.rectify, model)
     
     discriminator = None
@@ -524,13 +578,20 @@ def main(args):
         generator = Generator(args, vocabulary, model, trainer)
 
     #### add adversary classifier
-    mod = PrModel(args, model, trainer, bilstm, main_classifier, None, adversary_classifier, discriminator, generator, vocabulary)
+    mod = PrModel(args, model, trainer, bilstm, main_classifier, adversary_classifier, discriminator, generator, vocabulary)
+    
+    
+    if args.baseline:
+        _, ftest = mod.train_baseline(train, dev, test, args.iterations)
+        print(ftest)
+        return
+    
     
     print("Train main task")
     results["000_main_dev_acc"] = mod.train_main(train, dev)
     
     targets_test = [ex.get_label() for ex in test]
-    loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
+    loss_test, acc_test, _ = mod.evaluate_main(test, targets_test)
     print("\t Test results : l={} acc={}".format(loss_test, acc_test))
     results["001_main_test_acc"] = acc_test
     
@@ -554,9 +615,9 @@ def main(args):
     
     trainer.restart()
     print("Train adversary")
-    results["002_adv_dev_F"] = mod.train_adversary_bis(train_hidden, dev_hidden, mod.adversary_classifier)
+    results["002_adv_dev_F"] = mod.train_adversary(train_hidden, dev_hidden)
     targets_test = [ex.get_aux_labels() for ex in test]
-    loss_test, acc_test, predictions_test = mod.evaluate_adversary(test_hidden, mod.adversary_classifier)
+    loss_test, acc_test, predictions_test = mod.evaluate_adversary(test_hidden)
     
     print("\t Adversary Test results : l={} acc={}".format(loss_test, acc_test))
     outsize = mod.adversary_classifier.output_size()
@@ -605,7 +666,7 @@ def main(args):
 
     #print("Sanity check")
     #targets_test = [ex.get_label() for ex in test]
-    #loss_test, acc_test, _ = mod.evaluate(test, targets_test, mod.main_classifier, False)
+    #loss_test, acc_test, _ = mod.evaluate_main(test, targets_test)
     #print("\t Test results : l={} acc={}".format(loss_test, acc_test))
 
 
@@ -656,19 +717,15 @@ if __name__ == "__main__":
     parser.add_argument("--ptraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--alpha", type=float, default=0.01, help="scaling value for anti adversary loss")
     
-    parser.add_argument("--generator", default="", help="Fool a generator reconstructor (char, word)")
+    parser.add_argument("--generator", action="store_true", help="Fool a generator reconstructor (char, word)")
+    
+    parser.add_argument("--baseline", action="store_true", help="Train directly on reconstruction")
 
     args = parser.parse_args()
     
     os.makedirs(args.output, exist_ok=True)
     
-    if args.dataset == "ag":
-        args.adversary_type = "logistic"
-    else:
-        args.adversary_type = "softmax"
-    
     if "--dynet-seed" not in sys.argv:
         sys.argv.extend(["--dynet-seed", str(args.dynet_seed)])
-    #if "--dynet-weight-decay" not in sys.argv:
-        #sys.argv.extend(["--dynet-weight-decay", str(args.dynet_weight_decay)])
+
     main(args)
