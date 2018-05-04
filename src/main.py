@@ -459,17 +459,20 @@ class PrModel:
             for i, example in enumerate(train):
                 sys.stderr.write("\r{}%".format(i / len(train) * 100))
                 
-                #self.train_one(example, example.get_aux_labels(), classifier)
-                target = example.get_aux_labels()
-                
-                input_vec = self.get_input(example, training=True, backprop=True, do_not_renew = False)
-                loss = self.adversary_classifier.get_loss(input_vec, target)
-                loss.backward()
-                self.trainer.update()
+                try:
+                    #self.train_one(example, example.get_aux_labels(), classifier)
+                    target = example.get_aux_labels()
+                    
+                    input_vec = self.get_input(example, training=True, backprop=True, do_not_renew = False)
+                    loss = self.adversary_classifier.get_loss(input_vec, target)
+                    loss.backward()
+                    self.trainer.update()
 
-                self.trainer.learning_rate = lr / (1 + n_updates * dc)
-                
-                n_updates += 1
+                    self.trainer.learning_rate = lr / (1 + n_updates * dc)
+                    
+                    n_updates += 1
+                except:
+                    print(example.get_sentence())
             
             sys.stderr.write("\r")
             
