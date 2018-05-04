@@ -261,14 +261,16 @@ class PrModel:
         best = 0
         ibest=0
         
-        try:
-            for epoch in range(self.args.iterations):
-                random.shuffle(train)
-                self.bilstm.set_dropout(0.2)
+        
+        for epoch in range(self.args.iterations):
+            random.shuffle(train)
+            self.bilstm.set_dropout(0.2)
+            
+            discriminator_loss = 0
+            generator_loss = 0
+            for i, example in enumerate(train):
                 
-                discriminator_loss = 0
-                generator_loss = 0
-                for i, example in enumerate(train):
+                try: 
                     sys.stderr.write("\r{}%".format(i / len(train) * 100))
                     
                     #self.train_one(example, get_label(example), classifier)
@@ -292,44 +294,46 @@ class PrModel:
                         generator_loss += self.generator_train(example)
                     
                     n_updates += 1
-                
-                sys.stderr.write("\r")
-                
-                extra_info = ""
-                if self.args.atraining:
-                    extra_info = "D loss = {}".format(discriminator_loss/ len(train))
-                if self.args.generator:
-                    extra_info = "G loss = {}".format(generator_loss / len(train))
+                except:
+                    print("Error")
+            
+            sys.stderr.write("\r")
+            
+            extra_info = ""
+            if self.args.atraining:
+                extra_info = "D loss = {}".format(discriminator_loss/ len(train))
+            if self.args.generator:
+                extra_info = "G loss = {}".format(generator_loss / len(train))
 
+            
+            targets_t = [ex.get_label() for ex in sample_train]
+            targets_d = [ex.get_label() for ex in dev]
+            
+            loss_t, acc_t, predictions_t = self.evaluate_main(sample_train, targets_t)
+            loss_d, acc_d, predictions_d = self.evaluate_main(dev, targets_d)
+            
+            cmpare = acc_d
+            
+            #Fscore = ""
+            #if self.adversary:
+                #ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
+                #fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
+                ##print(ftrain, fdev)
+                #Fscore = "F: t = {} d = {}".format(ftrain, fdev)
                 
-                targets_t = [ex.get_label() for ex in sample_train]
-                targets_d = [ex.get_label() for ex in dev]
-                
-                loss_t, acc_t, predictions_t = self.evaluate_main(sample_train, targets_t)
-                loss_d, acc_d, predictions_d = self.evaluate_main(dev, targets_d)
-                
-                cmpare = acc_d
-                
-                #Fscore = ""
-                #if self.adversary:
-                    #ftrain = compute_eval_metrics(classifier.output_size(), targets_t, predictions_t)
-                    #fdev = compute_eval_metrics(classifier.output_size(), targets_d, predictions_d)
-                    ##print(ftrain, fdev)
-                    #Fscore = "F: t = {} d = {}".format(ftrain, fdev)
-                    
-                    #cmpare = fdev[2]
-                
-                if cmpare >= best:
-                    best = cmpare
-                    ibest = epoch
-                    self.model.save("{}/main_model{}".format(self.output_folder, ibest))
-                
-                print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, extra_info), flush=True)
+                #cmpare = fdev[2]
+            
+            if cmpare >= best:
+                best = cmpare
+                ibest = epoch
+                self.model.save("{}/main_model{}".format(self.output_folder, ibest))
+            
+            print("Epoch {} train: l={:.4f} acc={:.2f} dev: l={:.4f} acc={:.2f} {}".format(epoch, loss_t, acc_t, loss_d, acc_d, extra_info), flush=True)
         
-        finally:
-            if self.args.iterations > 0:
-                self.model.populate("{}/main_model{}".format(self.output_folder, ibest))
-            return best
+        
+        if self.args.iterations > 0:
+            self.model.populate("{}/main_model{}".format(self.output_folder, ibest))
+        return best
 
     #def train_main(self, train, dev):
         #get_label = lambda ex: ex.get_label()
@@ -472,7 +476,8 @@ class PrModel:
                     
                     n_updates += 1
                 except:
-                    print(example.get_sentence())
+                    for a in example.get_sentence():
+                        print(a, end="")
             
             sys.stderr.write("\r")
             
