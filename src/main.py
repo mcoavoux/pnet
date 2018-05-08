@@ -475,9 +475,11 @@ class PrModel:
                     self.trainer.learning_rate = lr / (1 + n_updates * dc)
                     
                     n_updates += 1
-                except:
-                    for a in example.get_sentence():
-                        print(a, end="")
+                finally:
+                    continue
+                #except:
+                    #for a in example.get_sentence():
+                        #print(a, end="")
             
             sys.stderr.write("\r")
             
