@@ -476,7 +476,7 @@ class PrModel:
                     
                     n_updates += 1
                 finally:
-                    continue
+                    print("error")
                 #except:
                     #for a in example.get_sentence():
                         #print(a, end="")
