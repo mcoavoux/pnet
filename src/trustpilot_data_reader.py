@@ -117,6 +117,16 @@ def get_dataset(lang):
 
 if __name__ == "__main__":
     
-    raw_data = get_raw_data("../datasets/src/france.auto-adjusted_gender.NUTS-regions.jsonl.tmp_filtered")
-    examples = construct_examples(raw_data)
+    #raw_data = get_raw_data("../datasets/src/france.auto-adjusted_gender.NUTS-regions.jsonl.tmp_filtered")
+    #examples = construct_examples(raw_data)
+    
+    for l in ["fr", "de", "dk", "us", "uk"]:
+        train, dev, test = get_dataset(l)
+        s = 0
+        for ex in train:
+            s += len(ex.get_sentence())
+        
+        print(l, s / len(train))
+
+
 
