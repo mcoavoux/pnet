@@ -7,6 +7,7 @@ import imdb_data_reader
 import trustpilot_data_reader
 import ag_data_reader
 import dw_data_reader
+import blog_data_reader
 
 from classifier import MLP, MLP_sigmoid
 from example import Example
@@ -425,7 +426,7 @@ class PrModel:
             Fscore = "F: t = {} d = {}".format(ftrain, fdev)
             cmpare = fdev[2]
             
-            if "tp" in self.args.dataset:
+            if "tp" in self.args.dataset or "bl" in self.args.dataset:
                 acc_all = fdev[3]
                 cmpare = sum(acc_all) / len(acc_all)
             
@@ -495,7 +496,7 @@ class PrModel:
             Fscore = "F: t = {} d = {}".format(ftrain, fdev)
             cmpare = fdev[2]
             
-            if "tp" in self.args.dataset:
+            if "tp" in self.args.dataset or "bl" in self.args.dataset:
                 acc_all = fdev[3]
                 cmpare = sum(acc_all) / len(acc_all)
             
@@ -525,6 +526,7 @@ def main(args):
     
     get_data = {"ag": lambda : ag_data_reader.get_dataset(args.num_NE),
                 "dw": lambda : dw_data_reader.get_dataset(args.num_NE),
+                "bl": lambda : blog_data_reader.get_dataset(),
                 "tp_fr": lambda : trustpilot_data_reader.get_dataset("fr"),
                 "tp_de": lambda : trustpilot_data_reader.get_dataset("de"),
                 "tp_dk": lambda : trustpilot_data_reader.get_dataset("dk"),
@@ -690,7 +692,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
-    parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk"], help="Dataset")
+    parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="Dataset")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
