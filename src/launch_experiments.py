@@ -7,7 +7,7 @@ import subprocess
 
 def generate_command_lines(args):
     
-    options_tpl = "-i {i} -I {I} -L {L} -l {l} -w {w} -W {W} {D}"
+    options_tpl = "--dynet-seed {ds} -i {i} -I {I} -L {L} -l {l} -w {w} -W {W} {D}"
     
     
     for l in args.dim_hidden:
@@ -23,7 +23,7 @@ def generate_command_lines(args):
                 others += " -k {} ".format(args.num_NE)
             
             
-            options_all = options_tpl.format(i=args.iterations, I=args.iterations_adv, L=L, l=l, w=w, W=W, D=others)
+            options_all = options_tpl.format(ds=args.dynet_seed, i=args.iterations, I=args.iterations_adv, L=L, l=l, w=w, W=W, D=others)
             
             ptraining = ["--ptraining --alpha {}".format(a) for a in args.alpha]
             
@@ -77,6 +77,8 @@ if __name__ == "__main__":
     parser.add_argument("--atraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--ptraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--alpha", type=float, nargs="+", default=[0.1], help="scaling value for anti adversary loss")
+    
+    parser.add_argument("--dynet-seed", type=int, default=4 , help="random seed for dynet (needs to be first argument!)")
     
     args = parser.parse_args()
     
