@@ -688,18 +688,27 @@ if __name__ == "__main__":
     random.seed(10)
     np.random.seed(10)
     
-    usage = """TODO: write usage"""
+    usage = """Implements the privacy evaluation protocol described in the article.
+
+(i) Trains a classifier to predict text labels (topic, sentiment)
+(ii) Generate a dataset with the hidden
+  representations of each text {r(x), z} with:
+    * z: binary private variables
+    * x: text
+    * r(x): vector representation of text
+(iii) Trains the attacker to predict z from x and evaluates privacy
+"""
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
     parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="Dataset")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
-    parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations")
+    parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations for attacker")
     
     parser.add_argument("--decay-constant", type=float, default=1e-6)
     parser.add_argument("--learning-rate", type=float, default=0.1)
-    parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks")
+    parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks [not used in article]")
     parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
     
     parser.add_argument("--adversary-type", choices=["logistic", "softmax"], default="logistic")
@@ -713,7 +722,7 @@ if __name__ == "__main__":
     parser.add_argument("--dim-word","-w", type=int, default=50, help="Dimension of word embeddings")
     parser.add_argument("--dim-wrnn","-W", type=int, default=50, help="Dimension of word lstm")
     
-    parser.add_argument("--use-demographics", "-D", action="store_true", help="use demographic variables as input to bi-lstm")
+    parser.add_argument("--use-demographics", "-D", action="store_true", help="use demographic variables as input to bi-lstm [+DEMO setting in article]")
     
     parser.add_argument("--hidden-layers", "-L", type=int, default=1, help="Number of hidden layers")
     parser.add_argument("--dim-hidden", "-l", type=int, default=50, help="Dimension of hidden layers")
@@ -721,15 +730,16 @@ if __name__ == "__main__":
     
     parser.add_argument("--subset", "-S", type=int, default=None, help="Train on a subset of n examples for debugging")
     
-    parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities")
+    parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities (topic classification only)")
 
-    parser.add_argument("--atraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
-    parser.add_argument("--ptraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
-    parser.add_argument("--alpha", type=float, default=0.01, help="scaling value for anti adversary loss")
+    # Defense methods
+    parser.add_argument("--atraining", action="store_true", help="Adversarial classification defense (multidetasking)")
+    parser.add_argument("--ptraining", action="store_true", help="Declustering defense")
+    parser.add_argument("--alpha", type=float, default=0.01, help="Scaling value declustering")
     
-    parser.add_argument("--generator", action="store_true", help="Fool a generator reconstructor (char, word)")
+    parser.add_argument("--generator", action="store_true", help="Adversarial generation defense")
     
-    parser.add_argument("--baseline", action="store_true", help="Train directly on reconstruction")
+    parser.add_argument("--baseline", action="store_true", help="Train a full model on private variables (upper bound for the attacker)")
 
     args = parser.parse_args()
     
