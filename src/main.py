@@ -701,7 +701,7 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("output", help="Output folder")
-    parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="Dataset")
+    parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="Dataset. tp=trustpilot, bl=blog")
     
     parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
     parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations for attacker")

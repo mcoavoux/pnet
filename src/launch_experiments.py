@@ -33,7 +33,7 @@ def generate_command_lines(args):
                 
                 output = "{}/{}".format(args.output, options.replace(" ", "_").replace("-", "_"))
                 
-                command_line = "python3 main.py {output} {dataset} {options} > {output}_log"
+                command_line = "python main.py {output} {dataset} {options} > {output}_log"
                 command_line = command_line.format(output=output, dataset=args.data, options=options)
                 
                 yield command_line
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     parser.add_argument("output", type=str, help="output folder")
     
     parser.add_argument("--iterations", "-i", type=int, default=10, help="Number of iterations per experiment")
-    parser.add_argument("--iterations-adv", "-I", type=int, default=20, help="Number of iterations for adversary")
+    parser.add_argument("--iterations-adv", "-I", type=int, default=20, help="Number of iterations for attacker")
     parser.add_argument("--threads", "-N", type=int, default=1, help="Max number of experiments in parallel")
     
     parser.add_argument("--hidden-layers", "-L", type=int, nargs="+", default=[2], help="Number of hidden layers")
@@ -74,8 +74,6 @@ if __name__ == "__main__":
     
     parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities")
     
-    parser.add_argument("--atraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
-    parser.add_argument("--ptraining", action="store_true", help="Anti-adversarial training with conditional distribution blurring training")
     parser.add_argument("--alpha", type=float, nargs="+", default=[0.1], help="scaling value for anti adversary loss")
     
     parser.add_argument("--dynet-seed", type=int, default=4 , help="random seed for dynet (needs to be first argument!)")
