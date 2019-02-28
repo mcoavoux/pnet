@@ -4,7 +4,7 @@ This is the code for the following article:
 **Privacy-preserving Neural Representation of Text**  
 Maximin Coavoux, Shashi Narayan, Shay B. Cohen  
 EMNLP 2018  
-[[preprint]](https://arxiv.org/abs/1808.09408) [[bib]](emnlp2018.bib)
+[[pdf]](http://aclweb.org/anthology/D18-1001.pdf) [[preprint]](https://arxiv.org/abs/1808.09408) [[bib]](http://aclweb.org/anthology/D18-1001.bib)
 
 
 ### Launch experiments
