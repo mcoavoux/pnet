@@ -49,6 +49,7 @@ class BertEncoder(nn.Module):
             batch_masks = []
             batch_lengths = []
             for token_list in sentence:
+                token_list = token_list[:500]
                 for i in range(len(token_list)):
                     if token_list[i] in self.replace:
                         token_list[i] = self.replace[token_list[i]]
@@ -57,6 +58,7 @@ class BertEncoder(nn.Module):
                     for token in token_list:
                         wp = self.tokenizer.wordpiece_tokenizer.tokenize(token)
                         wptokens.extend(wp)
+                    wptokens = wptokens[:500]
 
                     mask = [0 if tok[:2] == "##" else 1 for tok in wptokens]
                     mask = torch.tensor(mask, dtype=torch.uint8, device=self.device.device)
@@ -85,6 +87,7 @@ class BertEncoder(nn.Module):
             for token in sentence:
                 wp = self.tokenizer.wordpiece_tokenizer.tokenize(token)
                 wptokens.extend(wp)
+            wptokens = wptokens[:500]
 
             mask = [0 if tok[:2] == "##" else 1 for tok in wptokens]
             mask = torch.tensor(mask, dtype=torch.uint8, device=self.device.device)

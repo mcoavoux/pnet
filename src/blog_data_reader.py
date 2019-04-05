@@ -13,7 +13,7 @@ def read_data(filename):
     
     for line in open(filename):
         
-        line = line.strip().split()
+        line = line.strip().split("\t")
     
         topic = line[0]
         age = line[1]
@@ -62,3 +62,18 @@ def get_dataset():
     seg_size = len(examples) // 10
     test, dev, train = examples[:seg_size], examples[seg_size:seg_size*2], examples[seg_size*2:]
     return train, dev, test
+
+
+if __name__ == "__main__":
+    
+    train, dev, test = get_dataset()
+    
+    for t in train:
+        print(t.sentence)
+    
+    
+
+
+
+
+
