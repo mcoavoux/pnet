@@ -126,6 +126,7 @@ def compute_eval_metrics(n_tasks, gold, predictions):
 
 class PrivateClassifier(nn.Module):
     def __init__(self, input_size, n_hidden, n_private_labels):
+        super(PrivateClassifier, self).__init__()
         self.layers = nn.Sequential(nn.Linear(input_size, n_hidden),
                                     nn.Tanh(),
                                     nn.Linear(n_hidden, n_private_labels),
@@ -149,7 +150,7 @@ def bert_encoder_dataset(corpus, device):
         for i, example in enumerate(corpus):
             v = bert_encoder(example.p_sentence[:500])[0]
 
-            targets = torch.tensor([0, 0], device=device)
+            targets = torch.zeros(2, device=device)
             for j in example.get_aux_labels():
                 targets[j] = 1
 
@@ -199,6 +200,11 @@ def main(args):
     vocabulary = extract_vocabulary(train, add_symbols=symbols)
 
 
+    if args.subset:
+        train = train[:args.subset]
+        dev = dev[:args.subset]
+        test = test[:args.subset]
+
     device = torch.device("cuda")
     train_bert = bert_encoder_dataset(train, device)
 
@@ -209,20 +215,25 @@ def main(args):
     dev_bert = bert_encoder_dataset(dev, device)
     test_bert = bert_encoder_dataset(test, device)
 
-    exit()
-
     input_size = bert.BERT_DIM
     n_private_labels = 2
     n_hidden = args.dim_hidden
     model = PrivateClassifier(input_size, n_hidden, n_private_labels)
 
-    optimizer = optim.AdamTrainer(model.parameters())
+    model.to(device)
 
-    if args.subset:
-        train = train[:args.subset]
-        dev = dev[:args.subset]
+    optimizer = optim.Adam(model.parameters())
 
+    random.shuffle(train_bert)
+
+    for input, target in train_bert:
+        
+        output = model(input, target)
+        output["loss"].backward()
+        print(output["loss"])
+        optimizer.step()
     
+
 
 if __name__ == "__main__":
     import argparse
