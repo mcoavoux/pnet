@@ -13,7 +13,7 @@ def read_data(filename):
     
     for line in open(filename):
         
-        line = line.strip().split()
+        line = line.strip().split("\t")
     
         topic = line[0]
         age = line[1]
