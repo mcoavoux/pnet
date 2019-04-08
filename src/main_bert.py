@@ -242,7 +242,7 @@ def main(args):
 
     model.to(device)
 
-    optimizer = optim.Adam(model.parameters())
+    optimizer = optim.Adam(model.parameters(), weight_decay=0.005)
 
     random.shuffle(train_bert)
 
