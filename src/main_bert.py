@@ -161,6 +161,26 @@ def bert_encoder_dataset(corpus, device):
     return training_examples
 
 
+def eval_model(model, dataset):
+    model.eval()
+    acc = [0,0]
+    loss = 0
+    with torch.no_grad():
+        for x, y in dataset:
+            output = model(x, y)
+            loss += output["loss"].item()
+            predictions = output["predictions"]
+
+            correct = predictions.cpu().numpy() == y.cpu().numpy()
+            acc[0] += correct[0]
+            acc[1] += correct[1]
+#            print(y, predictions)
+#            print(type(y), type(predictions))
+
+    d = len(dataset)
+    #return {"acc": [acc[0] / d, acc[1] / d], "loss": loss / d}
+    return [acc[0] / d, acc[1] / d], loss / d
+
 def main(args):
     get_data = {"ag": lambda : ag_data_reader.get_dataset(args.num_NE),
                 "dw": lambda : dw_data_reader.get_dataset(args.num_NE),
@@ -208,9 +228,9 @@ def main(args):
     device = torch.device("cuda")
     train_bert = bert_encoder_dataset(train, device)
 
-    for i in train_bert[:20]:
-        print(i[0].shape)
-        print(i[1])
+#    for i in train_bert[:20]:
+#        print(i[0].shape)
+#        print(i[1])
 
     dev_bert = bert_encoder_dataset(dev, device)
     test_bert = bert_encoder_dataset(test, device)
@@ -226,13 +246,43 @@ def main(args):
 
     random.shuffle(train_bert)
 
-    for input, target in train_bert:
-        
-        output = model(input, target)
-        output["loss"].backward()
-        print(output["loss"])
-        optimizer.step()
-    
+    sample_train_bert = train_bert[:len(dev_bert)]
+
+    best_dev = [0, 0]
+    for iteration in range(args.iterations):
+        loss = 0
+        random.shuffle(train_bert)
+        model.train()
+        for input, target in train_bert:
+            optimizer.zero_grad()
+            output = model(input, target)
+            output["loss"].backward()
+            loss += output["loss"].item()
+            optimizer.step()
+
+        acc_dev, loss_dev = eval_model(model, dev_bert)
+        acc_train, loss_train = eval_model(model, sample_train_bert)
+        #print([type(i) for i in [iteration, loss, acc_train * 100, loss_train, acc_dev * 100, loss_dev]])
+        summary="Epoch {} Loss = {:.3f} train acc {:.2f} {:.2f} loss {:.3f} dev acc {:.2f} {:.2f} loss {:.3f}"
+        print(summary.format(iteration, loss, 
+                             acc_train[0] * 100, acc_train[1] * 100, loss_train, 
+                             acc_dev[0] * 100, acc_dev[1] * 100, loss_dev))
+
+
+        if sum(acc_dev) > sum(best_dev):
+            best_dev = [i for i in acc_dev]
+            model.cpu()
+            torch.save(model, "{}/model".format(args.output))
+            print(f"Best so far, epoch {iteration}")
+            model.to(device)
+
+    model = torch.load("{}/model".format(args.output))
+    model.to(device)
+    model.eval()
+
+    acc_test, loss_test = eval_model(model, test_bert)
+
+    print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test))
 
 
 if __name__ == "__main__":
