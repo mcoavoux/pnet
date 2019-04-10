@@ -60,15 +60,15 @@ if __name__ == "__main__":
     parser.add_argument("data", type=str, choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="dataset")
     parser.add_argument("output", type=str, help="output folder")
     
-    parser.add_argument("--iterations", "-i", type=int, default=10, help="Number of iterations per experiment")
+    parser.add_argument("--iterations", "-i", type=int, default=16, help="Number of iterations per experiment")
     parser.add_argument("--iterations-adv", "-I", type=int, default=20, help="Number of iterations for attacker")
     parser.add_argument("--threads", "-N", type=int, default=1, help="Max number of experiments in parallel")
     
-    parser.add_argument("--hidden-layers", "-L", type=int, nargs="+", default=[2], help="Number of hidden layers")
-    parser.add_argument("--dim-hidden", "-l", type=int, nargs="+", default=[128], help="Size of hidden layers")
+    parser.add_argument("--hidden-layers", "-L", type=int, nargs="+", default=[1], help="Number of hidden layers")
+    parser.add_argument("--dim-hidden", "-l", type=int, nargs="+", default=[64], help="Size of hidden layers")
     
     parser.add_argument("--dim-word","-w", type=int, nargs="+", default=[32], help="Dimension of word embeddings")
-    parser.add_argument("--dim-wrnn","-W", type=int, nargs="+", default=[32], help="Dimension of word lstm")
+    parser.add_argument("--dim-wrnn","-W", type=int, nargs="+", default=[8, 16, 32, 64, 128], help="Dimension of word lstm")
     
     parser.add_argument("--use-demographics", "-D", action="store_true", help="use demographic variables as input to bi-lstm")
     
