@@ -15,6 +15,22 @@ def get_fine_tuned_bert(modelname):
     bert = torch.load("{}/model_fine_tuned_bert".format(modelname))
     return bert
 
+
+## The following class is taken from: 
+## https://github.com/hassyGo/pytorch-playground/blob/master/gradient_reversal/gradient_reversal.py
+class GradientReversal(torch.autograd.Function):
+
+    def __init__(self, scale_):
+        super(GradientReversal, self).__init__()
+
+        self.scale = scale_
+
+    def forward(self, inp):
+        return inp.clone()
+
+    def backward(self, grad_out):
+        return -self.scale * grad_out.clone()
+
 class BertEncoder(nn.Module):
 
     def __init__(self):
