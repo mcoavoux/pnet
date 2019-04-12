@@ -17,6 +17,11 @@ import numpy as np
 
 import bert
 
+
+def no_backprop(tensor):
+    new = torch.clone(tensor.detach())
+    return new
+
 def compute_conditional_baseline(cond_aux, main):
     results = []
     n_examples = sum(main.values())
@@ -71,14 +76,20 @@ def get_demographics_prefix(example):
 
 def extract_vocabulary(dataset, add_symbols=None):
     freqs = defaultdict(int)
+    labels = set()
+    private_labels = [set(), set()]
     for example in dataset:
         s = example.get_sentence()
         for token in s:
-            freqs[token] += 1
+            freqs[token.lower()] += 1
     if add_symbols is not None:
         for s in add_symbols:
             freqs[s] += 1000
-    return Vocabulary(freqs)
+
+    tokens = sorted(freqs, key=lambda x: freqs[x], reverse=True)
+    tokens = ["@pad", "@unk"] + tokens
+    return tokens, {tok:i for i, tok in enumerate(tokens)}
+
 
 def get_aux_labels(examples):
     labels = set()
@@ -125,11 +136,11 @@ def compute_eval_metrics(n_tasks, gold, predictions):
     return p, r, f, acc_all
 
 class PrivateClassifier(nn.Module):
-    def __init__(self, input_size, n_hidden, n_private_labels):
+    def __init__(self, input_size, dim_hidden, n_private_labels):
         super(PrivateClassifier, self).__init__()
-        self.layers = nn.Sequential(nn.Linear(input_size, n_hidden),
+        self.layers = nn.Sequential(nn.Linear(input_size, dim_hidden),
                                     nn.Tanh(),
-                                    nn.Linear(n_hidden, n_private_labels),
+                                    nn.Linear(dim_hidden, n_private_labels),
                                     nn.Sigmoid())
 
     def forward(self, input_examples, targets=None):
@@ -139,6 +150,49 @@ class PrivateClassifier(nn.Module):
             output["loss"] = F.binary_cross_entropy(probs, targets)
         return output
 
+class PrivateEncoder(nn.Module):
+    def __init__(self, voc_size, dim_embeddings, dim_hidden, n_labels, n_hidden, n_private_labels):
+        super(PrivateEncoder, self).__init__()
+        self.private_classifier = PrivateClassifier(dim_hidden, n_hidden, n_private_labels)
+
+        self.emb = nn.Embedding(voc_size, dim_embeddings)
+        self.rnn = nn.LSTM(input_size = dim_embeddings, hidden_size=dim_hidden,
+                            num_layers=1, batch_first=True, bidirectional=False)
+        
+        self.classifier = nn.Sequential(nn.Linear(dim_hidden, n_hidden),
+                                        nn.Tanh(),
+                                        nn.Linear(n_hidden, n_labels))
+
+        #self.reverse = bert.GradientReversal(1)
+
+    def forward(self, input_examples, target=None, private_targets=None, reverse_fun=None):
+        output, (hn, cn) = self.rnn(self.emb(input_examples))
+        encoding = output[:, -1, :]
+
+        probs = self.classifier(encoding)
+
+        output = {"probs": probs, "predictions": probs.detach().cpu().numpy().argmax()}
+
+        if target is not None:
+            output["loss"] = F.cross_entropy(probs, target)
+        
+        if reverse_fun is not None:
+#            if reverse_fun == no_backprop:
+#                output["private"] = {"loss": torch.tensor([0.0], requires_grad=True), "predictions": torch.zeros(2), "probs": torch.ones(2)}
+#            else:
+             output["private"] = self.private_classifier(reverse_fun(encoding), targets = private_targets)
+        else:
+            assert not self.training
+            output["private"] = self.private_classifier(encoding, targets = private_targets)
+        #output["private"] = self.private_classifier(encoding, targets = private_targets)
+
+        return output
+
+    def just_encode(self, input_examples):
+        # Just return the output of the LSTM
+        output, (hn, cn) = self.rnn(self.emb(input_examples))
+        encoding = output[:, -1, :]
+        return torch.clone(encoding.detach())
 
 def bert_encoder_dataset(corpus, device):
     bert_encoder = bert.BertEncoder()
@@ -160,6 +214,33 @@ def bert_encoder_dataset(corpus, device):
 
     return training_examples
 
+def std_encoder_dataset(model, corpus):
+    training_examples = []
+    with torch.no_grad():
+        for example, _, privates in corpus:
+            v = model.just_encode(example)
+            training_examples.append((v, privates))
+    return training_examples
+
+def corpus_to_tensor(corpus, device, vocabulary):
+    data = []
+    target_set = set()
+    for example in corpus:
+        low_case = [word.lower() for word in example.p_sentence]
+        tokens_id = [vocabulary[word] if word in vocabulary else vocabulary["@unk"] for word in low_case]
+        tokens_id = torch.tensor(tokens_id, device=device).view(1, -1)
+
+        private_targets = torch.zeros(2, device=device)
+        for j in example.get_aux_labels():
+            private_targets[j] = 1
+        
+        target = torch.tensor([example.label], device=device)
+
+        target_set.add(example.label)
+
+        data.append((tokens_id, target, private_targets))
+    return data, target_set
+
 
 def eval_model(model, dataset):
     model.eval()
@@ -171,15 +252,89 @@ def eval_model(model, dataset):
             loss += output["loss"].item()
             predictions = output["predictions"]
 
-            correct = predictions.cpu().numpy() == y.cpu().numpy()
+            correct = predictions.view(-1).cpu().numpy() == y.cpu().numpy()
             acc[0] += correct[0]
             acc[1] += correct[1]
-#            print(y, predictions)
-#            print(type(y), type(predictions))
 
     d = len(dataset)
     #return {"acc": [acc[0] / d, acc[1] / d], "loss": loss / d}
     return [acc[0] / d, acc[1] / d], loss / d
+
+def eval_model_priv(model, corpus):
+    model.eval()
+    acc = 0
+    loss = 0
+    acc_priv = [0, 0]
+    loss_priv = 0
+    with torch.no_grad():
+        for x, y, z in corpus:
+            output = model(x, target=y, private_targets=z)
+            loss += output["loss"].item()
+            prediction = output["predictions"]
+            #print(prediction, y)
+            if prediction == y:
+                acc += 1
+            
+            if "loss" in output["private"]:
+                loss_priv += output["private"]["loss"].item()
+                private_predictions = output["private"]["predictions"]
+                #print(private_predictions.cpu().view(-1).numpy(), z.cpu().numpy())
+                correct = private_predictions.cpu().view(-1).numpy() == z.cpu().numpy()
+                #print(correct)
+                acc_priv[0] += correct[0]
+                acc_priv[1] += correct[1]
+
+    d = len(corpus)
+    return acc / d, loss / d, [acc_priv[0] / d, acc_priv[1] / d], loss_priv / d
+    #return acc_train, loss_train, acc_priv_train, loss_priv_train
+
+
+def train_probe(args, device, train_private, dev_private, test_private):
+    print("Training probe for private variables")
+
+    private_model = PrivateClassifier(args.W, dim_hidden=args.dim_hidden, n_private_labels=2)
+    private_model.to(device)
+    optimizer = optim.Adam(private_model.parameters())
+
+    random.shuffle(train_private)
+    sample_train_private = train_private[:len(dev_private)]
+
+    best_dev = [0, 0]
+    for iteration in range(args.iterations):
+        loss = 0
+        random.shuffle(train_private)
+        private_model.train()
+        for input, target in train_private:
+            optimizer.zero_grad()
+            output = private_model(input, target)
+            output["loss"].backward()
+            loss += output["loss"].item()
+            optimizer.step()
+
+        acc_dev, loss_dev = eval_model(private_model, dev_private)
+        acc_train, loss_train = eval_model(private_model, sample_train_private)
+        #print([type(i) for i in [iteration, loss, acc_train * 100, loss_train, acc_dev * 100, loss_dev]])
+        summary="Epoch {} Loss = {:.3f} train acc {:.2f} {:.2f} loss {:.3f} dev acc {:.2f} {:.2f} loss {:.3f}"
+        print(summary.format(iteration, loss, 
+                             acc_train[0] * 100, acc_train[1] * 100, loss_train, 
+                             acc_dev[0] * 100, acc_dev[1] * 100, loss_dev))
+
+
+        if sum(acc_dev) > sum(best_dev):
+            best_dev = [i for i in acc_dev]
+            private_model.cpu()
+            torch.save(private_model, "{}/private_model".format(args.output))
+            print(f"Best so far, epoch {iteration}")
+            private_model.to(device)
+
+    private_model = torch.load("{}/private_model".format(args.output))
+    private_model.to(device)
+    private_model.eval()
+
+    acc_test, loss_test = eval_model(private_model, test_private)
+
+    print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test))
+
 
 def main(args):
     get_data = {"ag": lambda : ag_data_reader.get_dataset(args.num_NE),
@@ -217,8 +372,7 @@ def main(args):
 
     #if args.use_demographics:
     symbols = ["<g={}>".format(i) for i in ["F", "M"]] + ["<a={}>".format(i) for i in ["U", "O"]]
-    vocabulary = extract_vocabulary(train, add_symbols=symbols)
-
+    i2tok, tok2i = extract_vocabulary(train, add_symbols=symbols)
 
     if args.subset:
         train = train[:args.subset]
@@ -226,63 +380,142 @@ def main(args):
         test = test[:args.subset]
 
     device = torch.device("cuda")
-    train_bert = bert_encoder_dataset(train, device)
 
-#    for i in train_bert[:20]:
-#        print(i[0].shape)
-#        print(i[1])
 
-    dev_bert = bert_encoder_dataset(dev, device)
-    test_bert = bert_encoder_dataset(test, device)
+    if args.mode == "bert":
+        train_bert = bert_encoder_dataset(train, device)
 
-    input_size = bert.BERT_DIM
-    n_private_labels = 2
-    n_hidden = args.dim_hidden
-    model = PrivateClassifier(input_size, n_hidden, n_private_labels)
+        dev_bert = bert_encoder_dataset(dev, device)
+        test_bert = bert_encoder_dataset(test, device)
 
-    model.to(device)
+        input_size = bert.BERT_DIM
+        n_private_labels = 2
+        n_hidden = args.dim_hidden
+        model = PrivateClassifier(input_size, n_hidden, n_private_labels)
 
-    optimizer = optim.Adam(model.parameters(), weight_decay=0.005)
+        model.to(device)
 
-    random.shuffle(train_bert)
+        optimizer = optim.Adam(model.parameters(), weight_decay=0.005)
 
-    sample_train_bert = train_bert[:len(dev_bert)]
-
-    best_dev = [0, 0]
-    for iteration in range(args.iterations):
-        loss = 0
         random.shuffle(train_bert)
-        model.train()
-        for input, target in train_bert:
-            optimizer.zero_grad()
-            output = model(input, target)
-            output["loss"].backward()
-            loss += output["loss"].item()
-            optimizer.step()
 
-        acc_dev, loss_dev = eval_model(model, dev_bert)
-        acc_train, loss_train = eval_model(model, sample_train_bert)
-        #print([type(i) for i in [iteration, loss, acc_train * 100, loss_train, acc_dev * 100, loss_dev]])
-        summary="Epoch {} Loss = {:.3f} train acc {:.2f} {:.2f} loss {:.3f} dev acc {:.2f} {:.2f} loss {:.3f}"
-        print(summary.format(iteration, loss, 
-                             acc_train[0] * 100, acc_train[1] * 100, loss_train, 
-                             acc_dev[0] * 100, acc_dev[1] * 100, loss_dev))
+        sample_train_bert = train_bert[:len(dev_bert)]
+
+        best_dev = [0, 0]
+        for iteration in range(args.iterations):
+            loss = 0
+            random.shuffle(train_bert)
+            model.train()
+            for input, target in train_bert:
+                optimizer.zero_grad()
+                output = model(input, target)
+                output["loss"].backward()
+                loss += output["loss"].item()
+                optimizer.step()
+
+            acc_dev, loss_dev = eval_model(model, dev_bert)
+            acc_train, loss_train = eval_model(model, sample_train_bert)
+            #print([type(i) for i in [iteration, loss, acc_train * 100, loss_train, acc_dev * 100, loss_dev]])
+            summary="Epoch {} Loss = {:.3f} train acc {:.2f} {:.2f} loss {:.3f} dev acc {:.2f} {:.2f} loss {:.3f}"
+            print(summary.format(iteration, loss, 
+                                 acc_train[0] * 100, acc_train[1] * 100, loss_train, 
+                                 acc_dev[0] * 100, acc_dev[1] * 100, loss_dev))
 
 
-        if sum(acc_dev) > sum(best_dev):
-            best_dev = [i for i in acc_dev]
-            model.cpu()
-            torch.save(model, "{}/model".format(args.output))
-            print(f"Best so far, epoch {iteration}")
-            model.to(device)
+            if sum(acc_dev) > sum(best_dev):
+                best_dev = [i for i in acc_dev]
+                model.cpu()
+                torch.save(model, "{}/model".format(args.output))
+                print(f"Best so far, epoch {iteration}")
+                model.to(device)
 
-    model = torch.load("{}/model".format(args.output))
-    model.to(device)
-    model.eval()
+        model = torch.load("{}/model".format(args.output))
+        model.to(device)
+        model.eval()
 
-    acc_test, loss_test = eval_model(model, test_bert)
+        acc_test, loss_test = eval_model(model, test_bert)
 
-    print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test))
+        print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test))
+
+    else:
+
+        train_tensor, target_set = corpus_to_tensor(train, device, tok2i)
+        dev_tensor, _ = corpus_to_tensor(dev, device, tok2i)
+        test_tensor, _ = corpus_to_tensor(test, device, tok2i)
+
+
+        num_targets = len(target_set)
+        assert num_targets == max(target_set)+1
+        #def __init__(self, voc_size, dim_embeddings, dim_hidden, n_labels, n_hidden, n_private_labels):
+        model = PrivateEncoder(len(tok2i), args.w, args.W, num_targets, n_hidden=1, n_private_labels=2)
+
+        if args.mode == "adv":
+            reverse = bert.GradientReversal(args.R)
+        elif args.mode == "std":
+            reverse = no_backprop
+        else:
+            reverse = None
+        
+        model.to(device)
+
+        optimizer = optim.Adam(model.parameters())
+
+        random.shuffle(train_tensor)
+
+        sample_train = train_tensor[:len(dev_tensor)]
+
+        best_dev = 0
+        for iteration in range(args.iterations):
+            loss = 0
+            private_loss = 0
+            random.shuffle(train_tensor)
+            model.train()
+            for input, target, private_target in train_tensor:
+                #print(input, target, private_target)
+                optimizer.zero_grad()
+                output = model(input, target=target, private_targets=private_target, reverse_fun=reverse)
+                full_loss = output["loss"] + output["private"]["loss"]
+                full_loss.backward()
+                loss += output["loss"].item()
+                private_loss += output["private"]["loss"].item()
+                optimizer.step()
+
+            acc_dev, loss_dev, acc_priv_dev, loss_priv_dev = eval_model_priv(model, dev_tensor)
+            acc_train, loss_train, acc_priv_train, loss_priv_train = eval_model_priv(model, sample_train)
+
+            summary = "Epoch {} Main[l {:.3f} tr a {:.2f} l {:.2f} dev a {:.2f} l {:.2f}] Priv[tr a {:.2f} {:.2f} l {:.3f} dev {:.2f} {:.2f} l {:.3f}]" 
+            print(summary.format(iteration,
+                                 loss,
+                                 acc_train*100, loss_train, acc_dev*100, loss_dev,
+                                 acc_priv_train[0]*100, acc_priv_train[1]*100,
+                                 loss_priv_train,
+                                 acc_priv_dev[0]*100, acc_priv_dev[1]*100,
+                                 loss_priv_dev))
+            
+            if acc_dev > best_dev:
+                best_dev = acc_dev
+                model.cpu()
+                torch.save(model, "{}/model".format(args.output))
+                print(f"Best so far, epoch {iteration}")
+                model.to(device)
+
+        print("Training done")
+        model = torch.load("{}/model".format(args.output))
+        model.to(device)
+        model.eval()
+
+        acc_test, loss_test, acc_priv_test, loss_priv_test = eval_model_priv(model, test_tensor)
+        
+        summary = "Main training test [a {:.2f} l {:.2f}] Priv[a {:.2f} {:.2f} l {:.3f}]"
+        print(summary.format(acc_test, loss_test, acc_priv_test[0]*100, acc_priv_test[1]*100, loss_priv_test))
+
+        train_private = std_encoder_dataset(model, train_tensor)
+        dev_private = std_encoder_dataset(model, dev_tensor)
+        test_private = std_encoder_dataset(model, test_tensor)
+
+
+        train_probe(args, device, train_private, dev_private, test_private)
+
 
 
 if __name__ == "__main__":
@@ -320,8 +553,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--dim-char","-c", type=int, default=50, help="Dimension of char embeddings")
     parser.add_argument("--dim-crnn","-C", type=int, default=50, help="Dimension of char lstm")
-    parser.add_argument("--dim-word","-w", type=int, default=50, help="Dimension of word embeddings")
-    parser.add_argument("--dim-wrnn","-W", type=int, default=50, help="Dimension of word lstm")
+    parser.add_argument("-w", type=int, default=50, help="Dimension of word embeddings")
+    parser.add_argument("-W", type=int, default=50, help="Dimension of word lstm")
     
     #parser.add_argument("--use-demographics", "-D", action="store_true", help="use demographic variables as input to bi-lstm [+DEMO setting in article]")
     
@@ -331,6 +564,10 @@ if __name__ == "__main__":
     
     parser.add_argument("--subset", "-S", type=int, default=None, help="Train on a subset of n examples for debugging")
     parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities (topic classification only)")
+
+    parser.add_argument("--mode", default="bert", choices=["bert", "std", "adv"], help="bert: evaluate leakage with bert pretrained representations. adv: lstm with adversarial training")
+
+    parser.add_argument("-R", type=float, default=1, help="Scale for reversal layer")
 
     # Defense methods
     #parser.add_argument("--atraining", action="store_true", help="Adversarial classification defense (multidetasking)")
