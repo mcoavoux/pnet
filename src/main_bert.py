@@ -146,7 +146,7 @@ class PrivateClassifier(nn.Module):
                                     nn.Sigmoid())
 
     def forward(self, input_examples, targets=None):
-        probs = self.layers(input_examples)
+        probs = self.layers(input_examples).view(-1)
         output = {"probs": probs, "predictions": probs > 0.5}
         if targets is not None:
             output["loss"] = F.binary_cross_entropy(probs, targets)
@@ -453,10 +453,10 @@ def main(args):
 
         if args.mode == "adv":
             reverse = bert.GradientReversal(args.R)
-            optimizer = optim.SGD(model.parameters())
+            optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
         elif args.mode == "std":
             reverse = no_backprop
-            optimizer = optim.SGD(model.parameters())
+            optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
         else:
             reverse = None
             optimizer = optim.Adam(model.parameters())
