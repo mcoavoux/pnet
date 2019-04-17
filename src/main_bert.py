@@ -138,9 +138,11 @@ def compute_eval_metrics(n_tasks, gold, predictions):
 class PrivateClassifier(nn.Module):
     def __init__(self, input_size, dim_hidden, n_private_labels):
         super(PrivateClassifier, self).__init__()
-        self.layers = nn.Sequential(nn.Linear(input_size, dim_hidden),
-                                    nn.Tanh(),
-                                    nn.Linear(dim_hidden, n_private_labels),
+#        self.layers = nn.Sequential(nn.Linear(input_size, dim_hidden),
+#                                    nn.Tanh(),
+#                                    nn.Linear(dim_hidden, n_private_labels),
+#                                    nn.Sigmoid())
+        self.layers = nn.Sequential(nn.Linear(input_size, n_private_labels),
                                     nn.Sigmoid())
 
     def forward(self, input_examples, targets=None):
@@ -544,7 +546,7 @@ if __name__ == "__main__":
     parser.add_argument("output", help="Output folder")
     parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="Dataset. tp=trustpilot, bl=blog")
     
-    parser.add_argument("--iterations", "-i", type=int, default=20, help="Number of training iterations")
+    parser.add_argument("--iterations", "-i", type=int, default=30, help="Number of training iterations")
     #parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations for attacker")
     #parser.add_argument("--decay-constant", type=float, default=1e-6)
     parser.add_argument("--learning-rate", type=float, default=0.1)
