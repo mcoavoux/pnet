@@ -317,14 +317,14 @@ def train_probe(args, device, train_private, dev_private, test_private):
         summary="Epoch {} Loss = {:.3f} train acc {:.2f} {:.2f} loss {:.3f} dev acc {:.2f} {:.2f} loss {:.3f}"
         print(summary.format(iteration, loss, 
                              acc_train[0] * 100, acc_train[1] * 100, loss_train, 
-                             acc_dev[0] * 100, acc_dev[1] * 100, loss_dev))
+                             acc_dev[0] * 100, acc_dev[1] * 100, loss_dev), flush=True)
 
 
         if sum(acc_dev) > sum(best_dev):
             best_dev = [i for i in acc_dev]
             private_model.cpu()
             torch.save(private_model, "{}/private_model".format(args.output))
-            print(f"Best so far, epoch {iteration}")
+            print(f"Best so far, epoch {iteration}", flush=True)
             private_model.to(device)
 
     private_model = torch.load("{}/private_model".format(args.output))
@@ -333,7 +333,7 @@ def train_probe(args, device, train_private, dev_private, test_private):
 
     acc_test, loss_test = eval_model(private_model, test_private)
 
-    print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test))
+    print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test), flush=True)
 
 
 def main(args):
@@ -419,14 +419,14 @@ def main(args):
             summary="Epoch {} Loss = {:.3f} train acc {:.2f} {:.2f} loss {:.3f} dev acc {:.2f} {:.2f} loss {:.3f}"
             print(summary.format(iteration, loss, 
                                  acc_train[0] * 100, acc_train[1] * 100, loss_train, 
-                                 acc_dev[0] * 100, acc_dev[1] * 100, loss_dev))
+                                 acc_dev[0] * 100, acc_dev[1] * 100, loss_dev), flush=True)
 
 
             if sum(acc_dev) > sum(best_dev):
                 best_dev = [i for i in acc_dev]
                 model.cpu()
                 torch.save(model, "{}/model".format(args.output))
-                print(f"Best so far, epoch {iteration}")
+                print(f"Best so far, epoch {iteration}", flush=True)
                 model.to(device)
 
         model = torch.load("{}/model".format(args.output))
@@ -435,7 +435,7 @@ def main(args):
 
         acc_test, loss_test = eval_model(model, test_bert)
 
-        print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test))
+        print("Accuracy, test: {:.2f} {:.2f} loss {:.3f}".format(acc_test[0] * 100, acc_test[1] * 100, loss_test), flush=True)
 
     else:
 
@@ -474,7 +474,10 @@ def main(args):
                 #print(input, target, private_target)
                 optimizer.zero_grad()
                 output = model(input, target=target, private_targets=private_target, reverse_fun=reverse)
-                full_loss = output["loss"] + output["private"]["loss"]
+                if args.mode == "adv":
+                    full_loss = output["loss"] + output["private"]["loss"]
+                else:
+                    full_loss = output["loss"]
                 full_loss.backward()
                 loss += output["loss"].item()
                 private_loss += output["private"]["loss"].item()
@@ -490,13 +493,13 @@ def main(args):
                                  acc_priv_train[0]*100, acc_priv_train[1]*100,
                                  loss_priv_train,
                                  acc_priv_dev[0]*100, acc_priv_dev[1]*100,
-                                 loss_priv_dev))
+                                 loss_priv_dev), flush=True)
             
             if acc_dev > best_dev:
                 best_dev = acc_dev
                 model.cpu()
                 torch.save(model, "{}/model".format(args.output))
-                print(f"Best so far, epoch {iteration}")
+                print(f"Best so far, epoch {iteration}", flush=True)
                 model.to(device)
 
         print("Training done")
@@ -507,7 +510,7 @@ def main(args):
         acc_test, loss_test, acc_priv_test, loss_priv_test = eval_model_priv(model, test_tensor)
         
         summary = "Main training test [a {:.2f} l {:.2f}] Priv[a {:.2f} {:.2f} l {:.3f}]"
-        print(summary.format(acc_test, loss_test, acc_priv_test[0]*100, acc_priv_test[1]*100, loss_priv_test))
+        print(summary.format(acc_test, loss_test, acc_priv_test[0]*100, acc_priv_test[1]*100, loss_priv_test), flush=True)
 
         train_private = std_encoder_dataset(model, train_tensor)
         dev_private = std_encoder_dataset(model, dev_tensor)
@@ -537,7 +540,7 @@ if __name__ == "__main__":
 (iii) Trains the attacker to predict z from x and evaluates privacy
 """
     
-    parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.RawTextHelpFormatter)
+    parser = argparse.ArgumentParser(description = usage, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("output", help="Output folder")
     parser.add_argument("dataset", choices=["ag", "dw", "tp_fr", "tp_de", "tp_dk", "tp_us", "tp_uk", "bl"], help="Dataset. tp=trustpilot, bl=blog")
     
