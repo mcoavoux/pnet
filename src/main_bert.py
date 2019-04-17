@@ -453,14 +453,17 @@ def main(args):
 
         if args.mode == "adv":
             reverse = bert.GradientReversal(args.R)
+            optimizer = optim.SGD(model.parameters())
         elif args.mode == "std":
             reverse = no_backprop
+            optimizer = optim.SGD(model.parameters())
         else:
             reverse = None
+            optimizer = optim.Adam(model.parameters())
         
         model.to(device)
 
-        optimizer = optim.Adam(model.parameters())
+
 
         random.shuffle(train_tensor)
 
