@@ -143,6 +143,11 @@ def get_dataset(lang):
 
     examples = get_balanced_distribution(examples)
 
+    random.shuffle(examples)
+
+    if len(examples) > 25000:
+        examples = examples[:25000]
+
     #if add_demographics:
         #for ex in examples:
             #s = ex.get_sentence()
@@ -150,8 +155,7 @@ def get_dataset(lang):
             #s.append("<G={}>".format(aux[0]))
             #s.append("<A={}>".format(aux[1]))
 
-    random.shuffle(examples)
-    seg_size = len(examples) // 10
+    seg_size = len(examples) // 15
     test, dev, train = examples[:seg_size], examples[seg_size:seg_size*2], examples[seg_size*2:]
     
     return train, dev, test

@@ -138,12 +138,12 @@ def compute_eval_metrics(n_tasks, gold, predictions):
 class PrivateClassifier(nn.Module):
     def __init__(self, input_size, dim_hidden, n_private_labels):
         super(PrivateClassifier, self).__init__()
-#        self.layers = nn.Sequential(nn.Linear(input_size, dim_hidden),
-#                                    nn.Tanh(),
-#                                    nn.Linear(dim_hidden, n_private_labels),
-#                                    nn.Sigmoid())
-        self.layers = nn.Sequential(nn.Linear(input_size, n_private_labels),
+        self.layers = nn.Sequential(nn.Linear(input_size, dim_hidden),
+                                    nn.Tanh(),
+                                    nn.Linear(dim_hidden, n_private_labels),
                                     nn.Sigmoid())
+#        self.layers = nn.Sequential(nn.Linear(input_size, n_private_labels),
+#                                    nn.Sigmoid())
 
     def forward(self, input_examples, targets=None):
         probs = self.layers(input_examples).view(-1)
@@ -182,7 +182,7 @@ class PrivateEncoder(nn.Module):
 #            if reverse_fun == no_backprop:
 #                output["private"] = {"loss": torch.tensor([0.0], requires_grad=True), "predictions": torch.zeros(2), "probs": torch.ones(2)}
 #            else:
-             output["private"] = self.private_classifier(reverse_fun(encoding), targets = private_targets)
+            output["private"] = self.private_classifier(reverse_fun(encoding), targets = private_targets)
         else:
             assert not self.training
             output["private"] = self.private_classifier(encoding, targets = private_targets)
@@ -296,7 +296,7 @@ def train_probe(args, device, train_private, dev_private, test_private):
 
     private_model = PrivateClassifier(args.W, dim_hidden=args.dim_hidden, n_private_labels=2)
     private_model.to(device)
-    optimizer = optim.Adam(private_model.parameters())
+    optimizer = optim.SGD(private_model.parameters(), lr=args.learning_rate)
 
     random.shuffle(train_private)
     sample_train_private = train_private[:len(dev_private)]
@@ -457,6 +457,9 @@ def main(args):
         elif args.mode == "std":
             reverse = no_backprop
             optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
+        elif args.mode == "mt":
+            reverse = lambda x: x
+            optimizer = optim.SGD(model.parameters(), lr=args.learning_rate)
         else:
             reverse = None
             optimizer = optim.Adam(model.parameters())
@@ -479,7 +482,7 @@ def main(args):
                 #print(input, target, private_target)
                 optimizer.zero_grad()
                 output = model(input, target=target, private_targets=private_target, reverse_fun=reverse)
-                if args.mode == "adv":
+                if args.mode in {"adv", "mt"}:
                     full_loss = output["loss"] + output["private"]["loss"]
                 else:
                     full_loss = output["loss"]
@@ -552,7 +555,7 @@ if __name__ == "__main__":
     parser.add_argument("--iterations", "-i", type=int, default=30, help="Number of training iterations")
     #parser.add_argument("--iterations-adversary", "-I", type=int, default=20, help="Number of training iterations for attacker")
     #parser.add_argument("--decay-constant", type=float, default=1e-6)
-    parser.add_argument("--learning-rate", type=float, default=0.1)
+    parser.add_argument("--learning-rate", type=float, default=0.01)
     #parser.add_argument("--aux", action="store_true", help="Use demographics as aux tasks [not used in article]")
     #parser.add_argument("--bidirectional", action="store_true", help="Use a bidirectional lstm instead of unidirectional")
     #parser.add_argument("--adversary-type", choices=["logistic", "softmax"], default="logistic")
@@ -573,7 +576,7 @@ if __name__ == "__main__":
     parser.add_argument("--subset", "-S", type=int, default=None, help="Train on a subset of n examples for debugging")
     parser.add_argument("--num-NE", "-k", type=int, default=4, help="Number of named entities (topic classification only)")
 
-    parser.add_argument("--mode", default="bert", choices=["bert", "std", "adv"], help="bert: evaluate leakage with bert pretrained representations. adv: lstm with adversarial training")
+    parser.add_argument("--mode", default="bert", choices=["bert", "std", "adv", "mt"], help="bert: evaluate leakage with bert pretrained representations. adv: lstm with adversarial training")
 
     parser.add_argument("-R", type=float, default=1, help="Scale for reversal layer")
 

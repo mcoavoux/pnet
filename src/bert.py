@@ -25,10 +25,12 @@ class GradientReversal(torch.autograd.Function):
         self.scale = scale_
 
     def forward(self, inp):
-        return inp.clone()
+        #return inp.clone()
+        return inp
 
     def backward(self, grad_out):
-        return -self.scale * grad_out.clone()
+        #return -self.scale * grad_out.clone()
+        return -self.scale * grad_out
 
 class BertEncoder(nn.Module):
 
